@@ -119,14 +119,14 @@ def test_graph_runs_end_to_end(sample_policy_pdf: Path) -> None:
             },
         }
     )
-    bundle = compile_graph(
+    graph = compile_graph(
         settings,
         controls=_tiny_controls(),
         embedder=FakeEmbedder(),  # type: ignore[arg-type]
         assessment_llm=fake_llm,  # type: ignore[arg-type]
         summary_llm=None,  # deterministic summary — no LLM for the summary step
     )
-    out = bundle.graph.invoke({"document_path": sample_policy_pdf})
+    out = graph.invoke({"document_path": sample_policy_pdf})
     report = out["report"]
 
     # Both controls produced an assessment, in some order.
@@ -150,11 +150,11 @@ def test_graph_runs_end_to_end(sample_policy_pdf: Path) -> None:
 def test_agentic_flag_compiles_graph() -> None:
     """The agentic path compiles even with an empty controls list."""
     settings = Settings()
-    bundle = compile_graph(
+    graph = compile_graph(
         settings,
         agentic=True,
         controls=[],
         embedder=FakeEmbedder(),  # type: ignore[arg-type]
         assessment_llm=ScriptedLLM(per_control={}),  # type: ignore[arg-type]
     )
-    assert bundle.graph is not None
+    assert graph is not None

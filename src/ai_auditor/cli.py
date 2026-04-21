@@ -82,8 +82,8 @@ def analyze(
         f"  agentic={agentic}\n"
     )
     summary_llm = None if skip_summary else make_llm(settings, temperature=0.2)
-    bundle = compile_graph(settings, agentic=agentic, summary_llm=summary_llm)
-    result = bundle.graph.invoke({"document_path": pdf})
+    graph = compile_graph(settings, agentic=agentic, summary_llm=summary_llm)
+    result = graph.invoke({"document_path": pdf})
     report: Report = result["report"]
     json_path, md_path = write_outputs(report, output)
     _print_summary_table(report)

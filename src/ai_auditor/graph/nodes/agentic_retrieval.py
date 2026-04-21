@@ -34,7 +34,15 @@ from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 
 from ai_auditor.embedding import Embedder
-from ai_auditor.models import Control, ControlAssessment, EvidenceSpan, ParsedDocument
+from ai_auditor.graph.nodes.assessment import finalize_assessment
+from ai_auditor.models import (
+    Confidence,
+    Control,
+    ControlAssessment,
+    Coverage,
+    EvidenceSpan,
+    ParsedDocument,
+)
 from ai_auditor.vector_store import QueryHit, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -280,30 +288,10 @@ def _build_assessment(state: _AgentState, *, max_iterations_reached: bool) -> Co
     final = state.pending_finalize
     coverage = _coerce_coverage(final.coverage)
     confidence = _coerce_confidence(final.confidence)
+    reasoning = final.reasoning.strip() or "(no reasoning provided)"
 
-    # Drop fabricated chunk ids — only cite things the agent actually saw.
-    kept: list[EvidenceSpan] = []
-    dropped: list[str] = []
-    for cid in final.evidence_chunk_ids:
-        hit = state.seen_hits.get(cid)
-        if hit is None:
-            dropped.append(cid)
-            continue
-        kept.append(
-            EvidenceSpan(
-                chunk_id=cid,
-                quote=hit.document[:300].strip(),
-                relevance_note=hit.metadata.get("section_heading", ""),
-            )
-        )
-    if dropped:
-        logger.warning(
-            "Dropping fabricated chunk_ids from agent finalize for %s: %s",
-            state.control.id,
-            dropped,
-        )
-
-    # Enforce min-searches-before-not_covered rule.
+    # Enforce min-searches-before-not_covered rule (agent-specific; not
+    # relevant to the deterministic path, which has a fixed query budget).
     if coverage == "not_covered" and state.search_count < MIN_SEARCHES_BEFORE_NOT_COVERED:
         logger.warning(
             "Agent for %s finalised not_covered after only %d searches; downgrading confidence",
@@ -312,31 +300,47 @@ def _build_assessment(state: _AgentState, *, max_iterations_reached: bool) -> Co
         )
         confidence = "low"
 
-    # Coverage/citation consistency: claimed coverage with no surviving evidence → coerce.
-    reasoning = final.reasoning.strip() or "(no reasoning provided)"
-    if coverage in {"covered", "partial"} and not kept:
-        logger.warning(
-            "Agent finalised %s for %s without any valid citations; coercing to not_covered",
-            coverage,
-            state.control.id,
-        )
-        coverage = "not_covered"
-        confidence = "low"
-        reasoning = (
-            f"{reasoning}\n\n[post-validation] Agent claimed '{final.coverage}' with no "
-            "surviving citation after chunk_id validation."
-        )
+    # Build EvidenceSpans from the agent's seen_hits so they carry the real
+    # quote text and section heading, then delegate to the shared
+    # finalize_assessment for chunk-id validation + coverage coercion.
+    evidence_spans: list[EvidenceSpan] = []
+    for cid in final.evidence_chunk_ids:
+        hit = state.seen_hits.get(cid)
+        if hit is None:
+            # keep the fabricated id in the list so finalize_assessment can
+            # log and drop it uniformly with the deterministic path.
+            evidence_spans.append(
+                EvidenceSpan(chunk_id=cid, quote="", relevance_note="")
+            )
+        else:
+            evidence_spans.append(
+                EvidenceSpan(
+                    chunk_id=cid,
+                    quote=hit.document[:300].strip(),
+                    relevance_note=hit.metadata.get("section_heading", ""),
+                )
+            )
 
-    if max_iterations_reached:
-        reasoning = f"{reasoning}\n\n[meta] Agent hit iteration cap before terminating cleanly."
-
-    return ControlAssessment(
+    assessment = finalize_assessment(
         control_id=state.control.id,
         coverage=coverage,
-        evidence=kept if coverage != "not_covered" else [],
-        reasoning=reasoning,
         confidence=confidence,
+        reasoning=reasoning,
+        evidence=evidence_spans,
+        valid_chunk_ids=set(state.seen_hits),
     )
+
+    if max_iterations_reached:
+        assessment = assessment.model_copy(
+            update={
+                "reasoning": (
+                    f"{assessment.reasoning}\n\n"
+                    "[meta] Agent hit iteration cap before terminating cleanly."
+                )
+            }
+        )
+
+    return assessment
 
 
 def _fallback_assessment(state: _AgentState, *, reason: str) -> ControlAssessment:
@@ -353,18 +357,24 @@ def _fallback_assessment(state: _AgentState, *, reason: str) -> ControlAssessmen
     )
 
 
-def _coerce_coverage(raw: str) -> str:
+def _coerce_coverage(raw: str) -> Coverage:
     value = (raw or "").strip().lower()
-    if value in {"covered", "partial", "not_covered"}:
-        return value
+    if value == "covered":
+        return "covered"
+    if value == "partial":
+        return "partial"
+    if value == "not_covered":
+        return "not_covered"
     logger.warning("Unknown coverage value from agent: %r; treating as not_covered", raw)
     return "not_covered"
 
 
-def _coerce_confidence(raw: str) -> str:
+def _coerce_confidence(raw: str) -> Confidence:
     value = (raw or "").strip().lower()
-    if value in {"low", "medium", "high"}:
-        return value
+    if value == "high":
+        return "high"
+    if value == "medium":
+        return "medium"
     return "low"
 
 

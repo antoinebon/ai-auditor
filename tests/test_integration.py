@@ -71,13 +71,13 @@ def test_integration_minimal_policy_runs_end_to_end() -> None:
     assert MINIMAL_PDF.exists(), "Run `uv run python scripts/build_samples.py` first"
     settings = Settings(controls_path=CORPUS_PATH)
     llm = AlwaysNotCoveredLLM()
-    bundle = compile_graph(
+    graph = compile_graph(
         settings,
         embedder=HashEmbedder(),  # type: ignore[arg-type]
         assessment_llm=llm,  # type: ignore[arg-type]
         summary_llm=None,
     )
-    result = bundle.graph.invoke({"document_path": MINIMAL_PDF})
+    result = graph.invoke({"document_path": MINIMAL_PDF})
     report = result["report"]
 
     corpus = load_controls(CORPUS_PATH)

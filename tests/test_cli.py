@@ -72,11 +72,8 @@ def test_analyze_writes_json_and_md(
         ),
     )
 
-    class _FakeBundle:
-        graph = _FakeGraph(canned_report)
-
-    def _fake_compile_graph(*_: Any, **__: Any) -> _FakeBundle:
-        return _FakeBundle()
+    def _fake_compile_graph(*_: Any, **__: Any) -> _FakeGraph:
+        return _FakeGraph(canned_report)
 
     monkeypatch.setattr(cli, "compile_graph", _fake_compile_graph)
     monkeypatch.setattr(cli, "make_llm", lambda *_, **__: None)
