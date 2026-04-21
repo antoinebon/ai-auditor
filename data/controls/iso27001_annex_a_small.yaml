@@ -1,0 +1,68 @@
+# Six-control subset for fast iteration / smoke-testing. Spans all four
+# Annex A themes so by-theme aggregation still has something to show, but
+# runs in seconds on a small local model (one LLM call per control).
+#
+# For the real demo / interview walkthrough, use iso27001_annex_a.yaml.
+
+- id: A.5.1
+  title: Policies for information security
+  theme: Organizational
+  description: >-
+    The organization should define, approve, publish, and communicate a set
+    of information security policies to all relevant personnel and external
+    parties. These policies must be reviewed at planned intervals and when
+    significant changes occur, to ensure continued suitability and
+    effectiveness.
+  queries: []
+
+- id: A.5.15
+  title: Access control
+  theme: Organizational
+  description: >-
+    Rules to control physical and logical access to information and other
+    associated assets should be established and implemented based on
+    business and information security requirements. Access must be granted
+    according to defined criteria and reviewed periodically.
+  queries: []
+
+- id: A.5.24
+  title: Information security incident management planning and preparation
+  theme: Organizational
+  description: >-
+    The organization should plan and prepare for managing information
+    security incidents by defining processes, roles, and responsibilities
+    in advance. Communication channels, escalation paths, and decision
+    authorities must be established before an incident occurs.
+  queries: []
+
+- id: A.6.3
+  title: Information security awareness, education and training
+  theme: People
+  description: >-
+    Personnel and, where relevant, interested parties should receive
+    appropriate information security awareness, education, and training,
+    with regular updates on organizational policies and procedures. The
+    programme should reflect evolving threats and be tailored to role
+    responsibilities.
+  queries: []
+
+- id: A.7.1
+  title: Physical security perimeters
+  theme: Physical
+  description: >-
+    Security perimeters should be defined and used to protect areas that
+    contain information and other associated assets. Perimeter strength
+    should be commensurate with the sensitivity of the assets housed
+    within.
+  queries: []
+
+- id: A.8.13
+  title: Information backup
+  theme: Technological
+  description: >-
+    Backup copies of information, software, and systems should be taken
+    and tested regularly in accordance with an agreed backup policy.
+    Backups should be protected against unauthorized access and
+    environmental threats and stored with appropriate geographic
+    separation.
+  queries: []
