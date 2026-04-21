@@ -20,6 +20,7 @@ build/
 
 # Run artefacts
 out/
+out-*/
 *.jsonl
 *.log
 
