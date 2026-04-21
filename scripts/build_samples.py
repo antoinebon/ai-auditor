@@ -1,8 +1,12 @@
-"""Build the three sample policy PDFs from text sources.
+"""Build the synthetic sample policy PDFs from text sources.
 
-Keeping the sources as plain text in ``data/examples/sources/*.txt`` makes
-them easy to diff and review; the PDFs are regenerated on demand with
-reportlab. Run from the repo root::
+Only the synthetic samples are generated here; the real, third-party
+PDFs (e.g. ``northwestern_infosec_policy.pdf``) live in the repo as
+downloaded artefacts with attribution in ``data/examples/README.md``.
+
+Keeping the synthetic sources as plain text in
+``data/examples/sources/*.txt`` makes them easy to diff and review; the
+PDFs are regenerated on demand with reportlab. Run from the repo root::
 
     uv run python scripts/build_samples.py
 """
@@ -19,6 +23,22 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 HEADING_RE = re.compile(r"^\d+(?:\.\d+)*\.?\s+\S")
 SOURCES = Path("data/examples/sources")
 TARGETS = Path("data/examples")
+
+
+def _strip_metadata_header(text: str) -> str:
+    """Drop any attribution / licence header above the first ``---`` line.
+
+    Source ``.txt`` files may prefix the document body with repo-facing
+    metadata (provenance URL, licence notice) as ``#``-prefixed comment
+    lines, terminated by a ``---`` separator. Everything above the
+    separator is for the repo reader, not for the analyser — stripping it
+    keeps attribution out of the embedded chunks and the retrieval index.
+    """
+    separator = "\n---\n"
+    if separator in text:
+        return text.split(separator, 1)[1].lstrip()
+    # Plain files without a separator are passed through unchanged.
+    return text
 
 
 def build_pdf(src: Path, dst: Path) -> None:
@@ -46,7 +66,7 @@ def build_pdf(src: Path, dst: Path) -> None:
         spaceAfter=6,
     )
 
-    text = src.read_text(encoding="utf-8")
+    text = _strip_metadata_header(src.read_text(encoding="utf-8"))
     blocks: list[tuple[str, str]] = []
     title: str | None = None
     buffer: list[str] = []
@@ -94,7 +114,6 @@ def main() -> None:
     mapping = {
         "minimal_policy.txt": "minimal_policy.pdf",
         "sans_acceptable_use.txt": "sans_acceptable_use.pdf",
-        "gitlab_infosec_excerpt.txt": "gitlab_infosec_excerpt.pdf",
     }
     for src_name, dst_name in mapping.items():
         src = SOURCES / src_name

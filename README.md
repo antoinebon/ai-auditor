@@ -9,8 +9,8 @@ inference, no per-run cost, and the policy document never leaves the
 machine — a good fit for a compliance-domain demo.
 
 ```text
-$ uv run ai-auditor analyze data/examples/gitlab_infosec_excerpt.pdf
-Analysing data/examples/gitlab_infosec_excerpt.pdf
+$ uv run ai-auditor analyze data/examples/northwestern_infosec_policy.pdf
+Analysing data/examples/northwestern_infosec_policy.pdf
   model=qwen2.5:7b-instruct @ http://localhost:11434
   controls=data/controls/iso27001_annex_a.yaml
   agentic=False
@@ -49,7 +49,7 @@ wrote out/report.md
 uv sync --extra dev
 cp .env.example .env       # adjust OLLAMA_HOST / OLLAMA_MODEL if needed
 uv run ai-auditor analyze data/examples/minimal_policy.pdf
-uv run ai-auditor analyze data/examples/gitlab_infosec_excerpt.pdf --agentic
+uv run ai-auditor analyze data/examples/northwestern_infosec_policy.pdf --agentic
 ```
 
 Reports are written to `out/report.json` and `out/report.md`. Use
@@ -194,7 +194,7 @@ make test           # pytest
 make check          # lint + typecheck + test
 make docker-build   # docker build -t ai-auditor .
 make run-min        # analyse the minimal sample PDF
-make run-gitlab     # analyse the comprehensive sample PDF
+make run-real       # analyse Northwestern University's published policy
 make run-agentic    # analyse the SANS-style sample with --agentic
 ```
 

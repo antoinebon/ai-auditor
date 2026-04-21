@@ -1,4 +1,4 @@
-.PHONY: sync fmt lint typecheck test check docker-build run-min run-gitlab run-sans run-agentic
+.PHONY: sync fmt lint typecheck test check docker-build run-min run-real run-sans run-agentic
 
 sync:
 	uv sync --extra dev
@@ -25,8 +25,8 @@ docker-build:
 run-min:
 	uv run ai-auditor analyze data/examples/minimal_policy.pdf
 
-run-gitlab:
-	uv run ai-auditor analyze data/examples/gitlab_infosec_excerpt.pdf
+run-real:
+	uv run ai-auditor analyze data/examples/northwestern_infosec_policy.pdf
 
 run-sans:
 	uv run ai-auditor analyze data/examples/sans_acceptable_use.pdf
