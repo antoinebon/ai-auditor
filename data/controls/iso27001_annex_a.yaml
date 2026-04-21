@@ -1,0 +1,349 @@
+# ISO 27001:2022 Annex A — curated subset (~30 controls) for the demo.
+# Descriptions are paraphrased from public implementation guidance; see
+# generation_prompt.md for the sourcing methodology.
+#
+# Schema per entry:
+#   id: control identifier (e.g. "A.5.15")
+#   title: official short title
+#   theme: Organizational | People | Physical | Technological
+#   description: 2-3 sentences, paraphrased, technology-neutral
+#   queries: list of retrieval-oriented paraphrases (populated by the
+#            query-generation step; may be empty initially).
+
+- id: A.5.1
+  title: Policies for information security
+  theme: Organizational
+  description: >-
+    The organization should define, approve, publish, and communicate a set
+    of information security policies to all relevant personnel and external
+    parties. These policies must be reviewed at planned intervals and when
+    significant changes occur, to ensure continued suitability and
+    effectiveness.
+  queries: []
+
+- id: A.5.2
+  title: Information security roles and responsibilities
+  theme: Organizational
+  description: >-
+    Information security roles and responsibilities should be defined and
+    allocated according to the organization's needs, with clear ownership
+    for assets, risk management activities, and security processes.
+    Accountability must be documented and communicated.
+  queries: []
+
+- id: A.5.3
+  title: Segregation of duties
+  theme: Organizational
+  description: >-
+    Conflicting duties and areas of responsibility should be segregated to
+    reduce opportunities for unauthorized or unintentional modification or
+    misuse of the organization's assets. Where segregation is not feasible,
+    compensating controls such as monitoring and management oversight
+    should be implemented.
+  queries: []
+
+- id: A.5.7
+  title: Threat intelligence
+  theme: Organizational
+  description: >-
+    Information about information security threats should be collected and
+    analyzed to produce actionable threat intelligence. This intelligence
+    should inform risk assessments, security controls, and incident
+    response in order to reduce the impact of threats on the organization.
+  queries: []
+
+- id: A.5.9
+  title: Inventory of information and other associated assets
+  theme: Organizational
+  description: >-
+    An inventory of information and other associated assets, including
+    their owners, should be developed and maintained. Ownership must be
+    assigned so assets are appropriately classified, protected, and handled
+    throughout their lifecycle.
+  queries: []
+
+- id: A.5.10
+  title: Acceptable use of information and other associated assets
+  theme: Organizational
+  description: >-
+    Rules for the acceptable use of information and associated assets
+    should be identified, documented, and implemented. Users must be made
+    aware of these rules and their responsibilities for protecting the
+    assets they handle.
+  queries: []
+
+- id: A.5.11
+  title: Return of assets
+  theme: Organizational
+  description: >-
+    Personnel and other interested parties should return all organizational
+    assets in their possession upon termination of employment, contract, or
+    agreement. The return process must be documented and verified to
+    prevent loss of assets or information.
+  queries: []
+
+- id: A.5.12
+  title: Classification of information
+  theme: Organizational
+  description: >-
+    Information should be classified according to the organization's needs
+    based on confidentiality, integrity, availability, and relevant
+    interested party requirements. Classification schemes must be
+    consistent and support appropriate handling across the information
+    lifecycle.
+  queries: []
+
+- id: A.5.14
+  title: Information transfer
+  theme: Organizational
+  description: >-
+    Rules, procedures, and agreements should be established to protect
+    information during transfer within the organization and with external
+    parties. Controls should address all transfer channels including
+    electronic, physical, and verbal communications.
+  queries: []
+
+- id: A.5.15
+  title: Access control
+  theme: Organizational
+  description: >-
+    Rules to control physical and logical access to information and other
+    associated assets should be established and implemented based on
+    business and information security requirements. Access must be granted
+    according to defined criteria and reviewed periodically.
+  queries: []
+
+- id: A.5.17
+  title: Authentication information
+  theme: Organizational
+  description: >-
+    The allocation, management, and protection of authentication
+    information such as passwords and cryptographic keys should be
+    controlled through a formal management process. Users must be made
+    aware of their responsibilities for safeguarding authentication
+    information.
+  queries: []
+
+- id: A.5.19
+  title: Information security in supplier relationships
+  theme: Organizational
+  description: >-
+    Processes and procedures should be defined and implemented to manage
+    the information security risks associated with the use of suppliers'
+    products and services. Supplier security expectations must be agreed,
+    communicated, and monitored throughout the relationship.
+  queries: []
+
+- id: A.5.24
+  title: Information security incident management planning and preparation
+  theme: Organizational
+  description: >-
+    The organization should plan and prepare for managing information
+    security incidents by defining processes, roles, and responsibilities
+    in advance. Communication channels, escalation paths, and decision
+    authorities must be established before an incident occurs.
+  queries: []
+
+- id: A.5.26
+  title: Response to information security incidents
+  theme: Organizational
+  description: >-
+    Information security incidents should be responded to in accordance
+    with documented procedures, including assessment, containment,
+    eradication, recovery, and communication with affected parties.
+    Responses must be timed and proportionate to incident severity.
+  queries: []
+
+- id: A.5.30
+  title: ICT readiness for business continuity
+  theme: Organizational
+  description: >-
+    ICT readiness should be planned, implemented, maintained, and tested
+    based on business continuity objectives and ICT continuity
+    requirements. Recovery time and recovery point objectives should be
+    established and validated through regular exercises.
+  queries: []
+
+- id: A.6.1
+  title: Screening
+  theme: People
+  description: >-
+    Background verification checks on candidates for employment should be
+    carried out prior to joining the organization, and on an ongoing basis
+    where relevant. Checks should be proportionate to the sensitivity of
+    the role and comply with applicable laws and regulations.
+  queries: []
+
+- id: A.6.2
+  title: Terms and conditions of employment
+  theme: People
+  description: >-
+    The employment contractual agreements should state the personnel's and
+    the organization's responsibilities for information security.
+    Confidentiality, acceptable use, and ongoing obligations should be
+    clearly addressed and acknowledged.
+  queries: []
+
+- id: A.6.3
+  title: Information security awareness, education and training
+  theme: People
+  description: >-
+    Personnel and, where relevant, interested parties should receive
+    appropriate information security awareness, education, and training,
+    with regular updates on organizational policies and procedures. The
+    programme should reflect evolving threats and be tailored to role
+    responsibilities.
+  queries: []
+
+- id: A.6.8
+  title: Information security event reporting
+  theme: People
+  description: >-
+    The organization should provide a mechanism for personnel to report
+    observed or suspected information security events through appropriate
+    channels in a timely manner. Reporting channels should be
+    well-publicized and protect reporters from retaliation.
+  queries: []
+
+- id: A.7.1
+  title: Physical security perimeters
+  theme: Physical
+  description: >-
+    Security perimeters should be defined and used to protect areas that
+    contain information and other associated assets. Perimeter strength
+    should be commensurate with the sensitivity of the assets housed
+    within.
+  queries: []
+
+- id: A.7.2
+  title: Physical entry
+  theme: Physical
+  description: >-
+    Secure areas should be protected by appropriate entry controls and
+    access points. Authorised personnel, visitors, and deliveries should
+    be managed through documented procedures that log and verify
+    admission.
+  queries: []
+
+- id: A.7.4
+  title: Physical security monitoring
+  theme: Physical
+  description: >-
+    Premises should be continuously monitored for unauthorized physical
+    access using suitable detection, alarm, and surveillance systems.
+    Monitoring arrangements must be integrated with incident response and
+    recorded for review.
+  queries: []
+
+- id: A.7.10
+  title: Storage media
+  theme: Physical
+  description: >-
+    Storage media should be managed through its lifecycle, including
+    acquisition, use, transport, and disposal, in line with the
+    organization's classification scheme. Disposal and re-use must prevent
+    recovery of stored information.
+  queries: []
+
+- id: A.8.1
+  title: User end point devices
+  theme: Technological
+  description: >-
+    Information stored on, processed by, or accessible via user end-point
+    devices should be protected through appropriate technical and
+    organizational measures. Controls should cover configuration, loss or
+    theft, and separation of business and personal use where relevant.
+  queries: []
+
+- id: A.8.2
+  title: Privileged access rights
+  theme: Technological
+  description: >-
+    The allocation and use of privileged access rights should be
+    restricted and managed through a formal process. Privileged activity
+    should be logged, reviewed, and limited to the minimum necessary for
+    the role.
+  queries: []
+
+- id: A.8.3
+  title: Information access restriction
+  theme: Technological
+  description: >-
+    Access to information and other associated assets should be restricted
+    in accordance with the established access control policy. Restrictions
+    must be enforced at the application, system, and data layers using a
+    least-privilege approach.
+  queries: []
+
+- id: A.8.5
+  title: Secure authentication
+  theme: Technological
+  description: >-
+    Secure authentication technologies and procedures should be
+    implemented based on information access restrictions and the access
+    control policy. Authentication strength should match the sensitivity
+    of the asset being accessed, including the use of multi-factor
+    authentication where warranted.
+  queries: []
+
+- id: A.8.7
+  title: Protection against malware
+  theme: Technological
+  description: >-
+    Protection against malware should be implemented and supported by
+    appropriate user awareness. Technical controls should cover detection,
+    prevention, and recovery, with timely updates to keep pace with
+    evolving threats.
+  queries: []
+
+- id: A.8.8
+  title: Management of technical vulnerabilities
+  theme: Technological
+  description: >-
+    Information about technical vulnerabilities of information systems in
+    use should be obtained in a timely fashion, the organization's
+    exposure evaluated, and appropriate measures taken to address the
+    associated risks. A documented patching and remediation cadence
+    should be enforced.
+  queries: []
+
+- id: A.8.13
+  title: Information backup
+  theme: Technological
+  description: >-
+    Backup copies of information, software, and systems should be taken
+    and tested regularly in accordance with an agreed backup policy.
+    Backups should be protected against unauthorized access and
+    environmental threats and stored with appropriate geographic
+    separation.
+  queries: []
+
+- id: A.8.15
+  title: Logging
+  theme: Technological
+  description: >-
+    Logs that record activities, exceptions, faults, and other relevant
+    events should be produced, stored, protected, and analyzed. Log
+    retention and integrity should support investigation and legal
+    obligations.
+  queries: []
+
+- id: A.8.16
+  title: Monitoring activities
+  theme: Technological
+  description: >-
+    Networks, systems, and applications should be monitored for anomalous
+    behaviour that may indicate a potential information security
+    incident. Monitoring should feed alerting and response processes with
+    appropriate thresholds and coverage.
+  queries: []
+
+- id: A.8.24
+  title: Use of cryptography
+  theme: Technological
+  description: >-
+    Rules for the effective use of cryptography, including cryptographic
+    key management, should be defined and implemented. Cryptographic
+    choices should reflect the risk context and remain current with
+    accepted algorithms and key lengths.
+  queries: []
