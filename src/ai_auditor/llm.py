@@ -58,7 +58,7 @@ def call_json[ModelT: BaseModel](
     """
     messages: list[Any] = [SystemMessage(content=system), HumanMessage(content=user)]
     response: AIMessage = llm.invoke(messages)
-    raw = _content_text(response)
+    raw = content_text(response)
     try:
         return schema.model_validate_json(raw)
     except ValidationError as first_error:
@@ -76,11 +76,11 @@ def call_json[ModelT: BaseModel](
         )
         messages = [SystemMessage(content=system), HumanMessage(content=retry_user)]
         retry_response: AIMessage = llm.invoke(messages)
-        retry_raw = _content_text(retry_response)
+        retry_raw = content_text(retry_response)
         return schema.model_validate_json(retry_raw)
 
 
-def _content_text(message: AIMessage) -> str:
+def content_text(message: AIMessage) -> str:
     """Extract plain text from an ``AIMessage``.
 
     LangChain can return either a string or a list of content parts. We
