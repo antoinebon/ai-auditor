@@ -147,10 +147,14 @@ def test_graph_runs_end_to_end(sample_policy_pdf: Path) -> None:
     assert "2 ISO 27001:2022" in report.summary or "Analysed 2" in report.summary
 
 
-def test_agentic_flag_is_stubbed_not_implemented() -> None:
+def test_agentic_flag_compiles_graph() -> None:
+    """The agentic path compiles even with an empty controls list."""
     settings = Settings()
-    try:
-        compile_graph(settings, agentic=True, controls=[])
-    except NotImplementedError:
-        return
-    raise AssertionError("Expected NotImplementedError for agentic=True")
+    bundle = compile_graph(
+        settings,
+        agentic=True,
+        controls=[],
+        embedder=FakeEmbedder(),  # type: ignore[arg-type]
+        assessment_llm=ScriptedLLM(per_control={}),  # type: ignore[arg-type]
+    )
+    assert bundle.graph is not None

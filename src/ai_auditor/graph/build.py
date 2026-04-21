@@ -9,6 +9,7 @@ of globals or hidden imports. Tests can override any of them via the
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from langchain_ollama import ChatOllama
@@ -19,6 +20,7 @@ from langgraph.types import Send
 
 from ai_auditor.config import Settings
 from ai_auditor.embedding import Embedder
+from ai_auditor.graph.nodes.agentic_retrieval import make_agentic_assess_node
 from ai_auditor.graph.nodes.embedding import make_embed_chunks_node
 from ai_auditor.graph.nodes.orchestration import (
     chunk_document_node,
@@ -58,20 +60,28 @@ def compile_graph(
     store: VectorStore | None = None,
     assessment_llm: ChatOllama | None = None,
     summary_llm: ChatOllama | None = None,
+    audit_trail_path: Path | None = None,
 ) -> GraphBundle:
     """Build the compiled LangGraph and expose the dependencies it uses."""
-    if agentic:
-        # Wired up in Phase 8: the agentic retrieval branch ships behind a
-        # CLI flag, not in this first graph.
-        raise NotImplementedError(
-            "agentic retrieval is not wired up yet; deterministic path only"
-        )
-
     resolved_controls = controls if controls is not None else load_controls(settings.controls_path)
     resolved_embedder = embedder if embedder is not None else Embedder(settings.embedding_model)
     resolved_store = store if store is not None else VectorStore()
-    resolved_llm = (
-        assessment_llm if assessment_llm is not None else make_llm(settings, json_mode=True)
+    # Agentic mode needs the tool-calling (non-JSON) variant so the model can
+    # emit tool_calls; the deterministic path wants JSON mode for structured
+    # output.
+    resolved_llm = assessment_llm if assessment_llm is not None else make_llm(
+        settings, json_mode=not agentic
+    )
+
+    assess_node: Any = (
+        make_agentic_assess_node(
+            resolved_embedder,
+            resolved_store,
+            resolved_llm,
+            audit_trail_path=audit_trail_path,
+        )
+        if agentic
+        else make_assess_one_control_node(resolved_embedder, resolved_store, resolved_llm)
     )
 
     # LangGraph's node-signature generics don't infer our plain callables
@@ -84,12 +94,7 @@ def compile_graph(
         "embed_chunks",
         make_embed_chunks_node(resolved_embedder, resolved_store),  # type: ignore[arg-type]
     )
-    builder.add_node(
-        "assess_one_control",
-        make_assess_one_control_node(  # type: ignore[arg-type]
-            resolved_embedder, resolved_store, resolved_llm
-        ),
-    )
+    builder.add_node("assess_one_control", assess_node)
     builder.add_node(
         "synthesize",
         make_synthesize_node(  # type: ignore[arg-type]
@@ -121,9 +126,17 @@ def compile_graph(
 
 
 def _make_fan_out(controls: list[Control]):  # type: ignore[no-untyped-def]
-    """Build a closure that returns one ``Send`` per control."""
+    """Build a closure that returns one ``Send`` per control.
 
-    def fan_out(_: MainState) -> list[Send]:
-        return [Send("assess_one_control", {"control": c}) for c in controls]
+    The Send payload carries the control plus the parsed document — the
+    latter is used by the agentic path's ``list_sections`` / ``read_section``
+    tools and ignored by the deterministic path.
+    """
+
+    def fan_out(state: MainState) -> list[Send]:
+        parsed = state["parsed"]
+        return [
+            Send("assess_one_control", {"control": c, "parsed": parsed}) for c in controls
+        ]
 
     return fan_out

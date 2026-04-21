@@ -37,6 +37,12 @@ class MainState(TypedDict, total=False):
 
 
 class PerControlState(TypedDict):
-    """Payload dispatched by ``Send`` to each per-control fan-out branch."""
+    """Payload dispatched by ``Send`` to each per-control fan-out branch.
+
+    The agentic retrieval path needs access to the parsed document
+    (for ``list_sections`` / ``read_section``); the deterministic path
+    ignores it.
+    """
 
     control: Control
+    parsed: ParsedDocument
