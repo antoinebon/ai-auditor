@@ -1,0 +1,70 @@
+ACCEPTABLE USE POLICY
+
+1. Overview
+This policy outlines the acceptable use of computer equipment and information
+resources at the organization. Inappropriate use exposes the organization to
+risks including virus attacks, compromise of network systems and services,
+and legal issues.
+
+2. Purpose
+The purpose of this policy is to outline the acceptable use of computing
+resources. These rules are in place to protect employees and the organization.
+Inappropriate use exposes the organization to risks including malware,
+compromise of systems, and legal liability.
+
+3. Scope
+This policy applies to the use of information, electronic and computing
+devices, and network resources to conduct business or interact with internal
+networks and business systems, whether owned or leased by the organization,
+the employee, or a third party. All employees, contractors, consultants,
+temporary and other workers are responsible for exercising good judgment
+regarding appropriate use.
+
+4. Policy
+
+4.1 General Use and Ownership
+Organization-proprietary information stored on electronic and computing
+devices, whether owned or leased by the organization, the employee or a
+third party, remains the sole property of the organization. Employees are
+responsible for promptly reporting the theft, loss, or unauthorized
+disclosure of organization-proprietary information.
+
+4.2 Security and Proprietary Information
+All mobile and computing devices that connect to the internal network must
+comply with the Minimum Access Policy. System level and user level passwords
+must comply with the Password Policy. Providing access to another individual
+is prohibited.
+
+4.3 Unacceptable Use
+The following activities are, in general, prohibited: violations of the
+rights of any person or company protected by copyright, trade secret, or
+other intellectual property; unauthorized copying of copyrighted material;
+accessing data the employee is not authorised to access; introduction of
+malicious programs; effecting security breaches or disruptions of network
+communication.
+
+5. Password Management
+All users must select passwords that meet complexity requirements and change
+them at least every 90 days. Passwords must not be shared with anyone,
+including administrative assistants or secretaries, or written down.
+
+6. Incident Reporting
+Any security incidents, suspected incidents, or policy violations must be
+reported promptly to the IT Security Team. The IT Security Team will
+investigate and coordinate the response. Employees must not attempt to
+investigate incidents on their own.
+
+7. Training
+All new employees receive information security awareness training during
+onboarding. Annual refresher training is required for all staff.
+
+8. Policy Compliance
+The IT team will verify compliance with this policy through various methods,
+including but not limited to, periodic walk-throughs, video monitoring,
+business tool reports, internal and external audits, and feedback. An
+employee found to have violated this policy may be subject to disciplinary
+action, up to and including termination of employment.
+
+9. Review
+This policy will be reviewed annually, or when significant changes to the
+environment or business occur.

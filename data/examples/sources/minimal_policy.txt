@@ -1,0 +1,14 @@
+EXAMPLE CORP — INFORMATION SECURITY POLICY
+
+1. Purpose
+This document describes Example Corp's approach to information security.
+
+2. Scope
+All Example Corp employees and contractors.
+
+3. Policy
+Employees must use strong passwords. Security incidents should be reported to IT.
+Access to production systems is approved by managers.
+
+4. Review
+This policy is reviewed annually by the IT team.

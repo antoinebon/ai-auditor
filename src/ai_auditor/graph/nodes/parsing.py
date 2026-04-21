@@ -40,7 +40,7 @@ def parse_pdf(path: Path) -> ParsedDocument:
     with pymupdf.open(path) as doc:  # type: ignore[no-untyped-call]
         page_spans: list[list[dict[str, Any]]] = [_page_text_spans(page) for page in doc]
         page_count = doc.page_count
-        title_meta = (doc.metadata or {}).get("title") or None
+        title_meta = _clean_title((doc.metadata or {}).get("title"))
 
     body_median = _median_body_font_size(page_spans)
     sections = _build_sections(page_spans, body_median)
@@ -104,6 +104,23 @@ def _page_text_spans(page: pymupdf.Page) -> list[dict[str, Any]]:
                 }
             )
     return out
+
+
+def _clean_title(raw: str | None) -> str | None:
+    """Return ``raw`` if it looks like a real title, else ``None``.
+
+    PDF writers often stamp placeholders like ``(anonymous)`` or ``untitled``
+    into the metadata; treat those as missing so we fall back to the first
+    section heading instead.
+    """
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    if cleaned.lower() in {"(anonymous)", "anonymous", "untitled", "untitled document"}:
+        return None
+    return cleaned
 
 
 def _median_body_font_size(pages: list[list[dict[str, Any]]]) -> float:
