@@ -69,8 +69,8 @@ def compile_graph(
     # Agentic mode needs the tool-calling (non-JSON) variant so the model can
     # emit tool_calls; the deterministic path wants JSON mode for structured
     # output.
-    resolved_llm = assessment_llm if assessment_llm is not None else make_llm(
-        settings, json_mode=not agentic
+    resolved_llm = (
+        assessment_llm if assessment_llm is not None else make_llm(settings, json_mode=not agentic)
     )
 
     assess_node: Any = (
@@ -135,8 +135,6 @@ def _make_fan_out(controls: list[Control]):  # type: ignore[no-untyped-def]
 
     def fan_out(state: MainState) -> list[Send]:
         parsed = state["parsed"]
-        return [
-            Send("assess_one_control", {"control": c, "parsed": parsed}) for c in controls
-        ]
+        return [Send("assess_one_control", {"control": c, "parsed": parsed}) for c in controls]
 
     return fan_out

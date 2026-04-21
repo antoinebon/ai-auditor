@@ -63,8 +63,7 @@ def call_json[ModelT: BaseModel](
         return schema.model_validate_json(raw)
     except ValidationError as first_error:
         logger.warning(
-            "LLM structured output failed schema validation on first attempt; retrying. "
-            "error=%s",
+            "LLM structured output failed schema validation on first attempt; retrying. error=%s",
             first_error,
         )
         retry_user = (

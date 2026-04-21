@@ -40,9 +40,7 @@ from ai_auditor.vector_store import QueryHit, VectorStore
 logger = logging.getLogger(__name__)
 
 _AGENT_PROMPT = (
-    resources.files("ai_auditor.prompts")
-    .joinpath("retrieval_agent.md")
-    .read_text(encoding="utf-8")
+    resources.files("ai_auditor.prompts").joinpath("retrieval_agent.md").read_text(encoding="utf-8")
 )
 
 MAX_ITERATIONS_DEFAULT = 6

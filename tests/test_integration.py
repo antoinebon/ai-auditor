@@ -89,6 +89,9 @@ def test_integration_minimal_policy_runs_end_to_end() -> None:
     assert report.stats.partial == 0
     assert report.stats.not_covered == len(corpus)
     # Deterministic summary was used (no summary_llm), reports the right total.
-    assert f"{len(corpus)} ISO 27001:2022" in report.summary or f"Analysed {len(corpus)}" in report.summary
+    assert (
+        f"{len(corpus)} ISO 27001:2022" in report.summary
+        or f"Analysed {len(corpus)}" in report.summary
+    )
     # One LLM call per control.
     assert llm.call_count == len(corpus)

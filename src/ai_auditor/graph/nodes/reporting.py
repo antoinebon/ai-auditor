@@ -56,9 +56,7 @@ def _compute_stats(assessments: list[ControlAssessment]) -> ReportStats:
     by_theme: dict[str, dict[str, int]] = {}
     for a in assessments:
         theme = _theme_from_control_id(a.control_id)
-        by_theme.setdefault(
-            theme, {"covered": 0, "partial": 0, "not_covered": 0, "total": 0}
-        )
+        by_theme.setdefault(theme, {"covered": 0, "partial": 0, "not_covered": 0, "total": 0})
         by_theme[theme][a.coverage] += 1
         by_theme[theme]["total"] += 1
 
