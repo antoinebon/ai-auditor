@@ -1,0 +1,70 @@
+[project]
+name = "ai-auditor"
+version = "0.1.0"
+description = "ISO 27001:2022 policy gap analyzer — LangGraph + local Ollama"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.4",
+    "langchain-core>=0.3",
+    "langchain-ollama>=0.2",
+    "pymupdf>=1.24",
+    "sentence-transformers>=3.0,<5.0",
+    "chromadb>=0.5",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "typer>=0.12",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.12",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-pyyaml>=6.0",
+    "reportlab>=4.0",  # used only by the fixture script that builds sample PDFs
+]
+
+[project.scripts]
+ai-auditor = "ai_auditor.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_auditor"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/ai_auditor/prompts" = "ai_auditor/prompts"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["chromadb.*", "sentence_transformers.*", "fitz.*", "pymupdf.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra -q"
