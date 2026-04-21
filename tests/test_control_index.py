@@ -10,7 +10,6 @@ from pydantic import ValidationError
 
 from ai_auditor.ingestion.control_index import dump_controls, load_controls
 
-
 CORPUS_PATH = Path(__file__).resolve().parents[1] / "data" / "controls" / "iso27001_annex_a.yaml"
 
 
