@@ -8,9 +8,10 @@ message convention. Four tools:
 - ``read_section``    — read a full section verbatim
 - ``finalize``        — record the coverage judgment and terminate
 
-The loop is capped at ``max_iterations`` LLM calls. Every step is appended
-to an optional JSONL trace so each judgment produces a full reasoning
-record — the "defensible audit trail" we'd expect in a compliance tool.
+The loop is capped at ``max_iterations`` LLM calls. Tracing is handled by
+MLflow's LangChain autolog plus an ``@mlflow.trace`` parent span on
+``run_retrieval_agent`` — see ``ai_auditor.tracing``. There is no
+bespoke on-disk trace writer; inspect traces via ``mlflow ui``.
 
 If the agent hits the iteration cap without calling ``finalize``, or the
 model returns text without any tool call, we emit a low-confidence
@@ -25,9 +26,9 @@ import json
 import logging
 from collections.abc import Callable
 from importlib import resources
-from pathlib import Path
-from typing import Any, TextIO
+from typing import Any
 
+import mlflow
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
@@ -89,6 +90,7 @@ class FinalizeArgs(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+@mlflow.trace(name="retrieval_agent")
 def run_retrieval_agent(
     control: Control,
     document: ParsedDocument,
@@ -97,9 +99,15 @@ def run_retrieval_agent(
     llm: BaseChatModel,
     *,
     max_iterations: int = MAX_ITERATIONS_DEFAULT,
-    trace_writer: TextIO | None = None,
 ) -> ControlAssessment:
-    """Run the agent loop for ``control`` and return a ``ControlAssessment``."""
+    """Run the agent loop for ``control`` and return a ``ControlAssessment``.
+
+    The ``@mlflow.trace`` decorator wraps each per-control invocation in a
+    parent span tagged with the control id; the underlying LLM and tool
+    calls show up as nested spans via ``mlflow.langchain.autolog``. When
+    MLflow tracing is disabled the decorator is a no-op.
+    """
+    mlflow.update_current_trace(tags={"control_id": control.id, "control_title": control.title})
     state = _AgentState(control=control, document=document)
     tools = _build_tools(state, embedder, store)
     llm_with_tools = llm.bind_tools([t for _, t in tools])
@@ -110,38 +118,28 @@ def run_retrieval_agent(
         HumanMessage(content=_control_prompt(control)),
     ]
 
-    for iteration in range(max_iterations):
+    for _iteration in range(max_iterations):
         response: AIMessage = llm_with_tools.invoke(messages)
         messages.append(response)
-        _trace(trace_writer, control.id, iteration, "model_response", _summarise_response(response))
 
         tool_calls = getattr(response, "tool_calls", None) or []
         if not tool_calls:
-            # Model answered without using tools — nudge once, then bail.
-            _trace(trace_writer, control.id, iteration, "no_tool_calls", {})
+            # Model answered without using tools — nothing more to dispatch.
             break
 
         finalized = False
         for call in tool_calls:
             name = call["name"]
             args = call.get("args", {}) or {}
-            call_id = call.get("id", f"call_{iteration}")
+            call_id = call.get("id", f"call_{_iteration}")
 
             if name == "finalize":
                 state.pending_finalize = FinalizeArgs.model_validate(args)
-                _trace(trace_writer, control.id, iteration, "finalize", args)
                 finalized = True
                 break
 
             tool = tool_map.get(name)
             result = f"unknown tool: {name}" if tool is None else tool.invoke(args)
-            _trace(
-                trace_writer,
-                control.id,
-                iteration,
-                f"tool:{name}",
-                {"args": args, "result_preview": _preview(result)},
-            )
             messages.append(ToolMessage(content=result, tool_call_id=call_id))
 
         if finalized:
@@ -379,7 +377,7 @@ def _coerce_confidence(raw: str) -> Confidence:
 
 
 # ---------------------------------------------------------------------------
-# Prompt construction + trace helpers
+# Prompt construction
 # ---------------------------------------------------------------------------
 
 
@@ -392,40 +390,6 @@ def _control_prompt(control: Control) -> str:
     )
 
 
-def _summarise_response(msg: AIMessage) -> dict[str, Any]:
-    tool_calls = getattr(msg, "tool_calls", None) or []
-    return {
-        "tool_calls": [{"name": tc["name"], "args": tc.get("args", {})} for tc in tool_calls],
-        "text_preview": _preview(
-            msg.content if isinstance(msg.content, str) else json.dumps(msg.content)
-        ),
-    }
-
-
-def _preview(text: str, limit: int = 240) -> str:
-    s = (text or "").strip()
-    return s if len(s) <= limit else s[:limit] + "…"
-
-
-def _trace(
-    writer: TextIO | None,
-    control_id: str,
-    iteration: int,
-    action: str,
-    payload: Any,
-) -> None:
-    if writer is None:
-        return
-    record = {
-        "control_id": control_id,
-        "iteration": iteration,
-        "action": action,
-        "payload": payload,
-    }
-    writer.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
-    writer.flush()
-
-
 # ---------------------------------------------------------------------------
 # Factory wiring into the graph — used by build.py under --agentic
 # ---------------------------------------------------------------------------
@@ -436,24 +400,14 @@ def make_agentic_assess_node(
     store: VectorStore,
     llm: BaseChatModel,
     *,
-    audit_trail_path: Path | None = None,
     max_iterations: int = MAX_ITERATIONS_DEFAULT,
 ) -> Callable[[dict[str, Any]], dict[str, list[ControlAssessment]]]:
     """Build a per-control node that runs the agentic retrieval path.
 
-    The returned node receives a ``PerControlState``-shaped dict plus the
-    parsed document via closure (it needs the document to expose
-    ``list_sections`` / ``read_section``). The caller therefore has to
-    thread ``parsed`` into the agent — we do it by making the full
-    ``MainState`` visible via a shared reference injected at build time
-    through ``document_ref``.
+    The returned node receives a ``PerControlState``-shaped dict (control
+    + parsed document); ``run_retrieval_agent`` traces itself via MLflow
+    autolog + ``@mlflow.trace``.
     """
-    # Opened lazily so tests that never take the agentic path don't touch
-    # the filesystem.
-    writer: TextIO | None = None
-    if audit_trail_path is not None:
-        audit_trail_path.parent.mkdir(parents=True, exist_ok=True)
-        writer = audit_trail_path.open("a", encoding="utf-8")
 
     def node(sub_state: dict[str, Any]) -> dict[str, list[ControlAssessment]]:
         control = sub_state["control"]
@@ -465,7 +419,6 @@ def make_agentic_assess_node(
             store,
             llm,
             max_iterations=max_iterations,
-            trace_writer=writer,
         )
         return {"assessments": [assessment]}
 

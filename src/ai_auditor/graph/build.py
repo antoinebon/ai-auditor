@@ -8,7 +8,6 @@ of globals or hidden imports. Tests can override any of them via the
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -41,7 +40,6 @@ def compile_graph(
     store: VectorStore | None = None,
     assessment_llm: BaseChatModel | None = None,
     summary_llm: BaseChatModel | None = None,
-    audit_trail_path: Path | None = None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """Build and return the compiled LangGraph.
 
@@ -57,12 +55,7 @@ def compile_graph(
     )
 
     assess_node: Any = (
-        make_agentic_assess_node(
-            resolved_embedder,
-            resolved_store,
-            resolved_llm,
-            audit_trail_path=audit_trail_path,
-        )
+        make_agentic_assess_node(resolved_embedder, resolved_store, resolved_llm)
         if agentic
         else make_assess_one_control_node(resolved_embedder, resolved_store, resolved_llm)
     )
