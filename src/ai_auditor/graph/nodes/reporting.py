@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
 
 from ai_auditor.graph.state import MainState
 from ai_auditor.llm import content_text
@@ -23,7 +23,7 @@ def make_synthesize_node(
     model_name: str,
     *,
     agentic: bool,
-    summary_llm: ChatOllama | None = None,
+    summary_llm: BaseChatModel | None = None,
 ) -> Callable[[MainState], dict[str, Report]]:
     """Closure factory for the report-synthesis node."""
 
@@ -88,7 +88,7 @@ def _theme_from_control_id(cid: str) -> str:
 def _compose_summary(
     assessments: list[ControlAssessment],
     stats: ReportStats,
-    llm: ChatOllama | None,
+    llm: BaseChatModel | None,
 ) -> str:
     if llm is None:
         return _deterministic_summary(stats)

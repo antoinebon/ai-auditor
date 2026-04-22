@@ -18,7 +18,7 @@ import logging
 from collections.abc import Callable
 from importlib import resources
 
-from langchain_ollama import ChatOllama
+from langchain_core.language_models import BaseChatModel
 
 from ai_auditor.embedding import Embedder
 from ai_auditor.graph.nodes.retrieval import retrieve_for_control
@@ -43,7 +43,7 @@ _ASSESSMENT_PROMPT = (
 def assess_control(
     control: Control,
     evidence: list[QueryHit],
-    llm: ChatOllama,
+    llm: BaseChatModel,
 ) -> ControlAssessment:
     """Produce a ``ControlAssessment`` for ``control`` given ``evidence`` hits."""
     user_prompt = _render_user_prompt(control, evidence)
@@ -61,7 +61,7 @@ def assess_control(
 def make_assess_one_control_node(
     embedder: Embedder,
     store: VectorStore,
-    llm: ChatOllama,
+    llm: BaseChatModel,
 ) -> Callable[[PerControlState], dict[str, list[ControlAssessment]]]:
     """Closure factory for the deterministic per-control fan-out node.
 

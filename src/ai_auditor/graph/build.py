@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from langchain_ollama import ChatOllama
+from langchain_core.language_models import BaseChatModel
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -39,8 +39,8 @@ def compile_graph(
     controls: list[Control] | None = None,
     embedder: Embedder | None = None,
     store: VectorStore | None = None,
-    assessment_llm: ChatOllama | None = None,
-    summary_llm: ChatOllama | None = None,
+    assessment_llm: BaseChatModel | None = None,
+    summary_llm: BaseChatModel | None = None,
     audit_trail_path: Path | None = None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """Build and return the compiled LangGraph.

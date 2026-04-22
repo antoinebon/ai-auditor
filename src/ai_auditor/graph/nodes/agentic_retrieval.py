@@ -1,6 +1,6 @@
 """Bounded ReAct retrieval agent (per-control).
 
-Hand-rolled agent loop using ``ChatOllama.bind_tools`` + LangChain's tool
+Hand-rolled agent loop using ``BaseChatModel.bind_tools`` + LangChain's tool
 message convention. Four tools:
 
 - ``list_sections``   — show the document's table of contents
@@ -28,9 +28,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, TextIO
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
-from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 
 from ai_auditor.embedding import Embedder
@@ -94,7 +94,7 @@ def run_retrieval_agent(
     document: ParsedDocument,
     embedder: Embedder,
     store: VectorStore,
-    llm: ChatOllama,
+    llm: BaseChatModel,
     *,
     max_iterations: int = MAX_ITERATIONS_DEFAULT,
     trace_writer: TextIO | None = None,
@@ -434,7 +434,7 @@ def _trace(
 def make_agentic_assess_node(
     embedder: Embedder,
     store: VectorStore,
-    llm: ChatOllama,
+    llm: BaseChatModel,
     *,
     audit_trail_path: Path | None = None,
     max_iterations: int = MAX_ITERATIONS_DEFAULT,
