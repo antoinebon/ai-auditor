@@ -307,9 +307,7 @@ def _build_assessment(state: _AgentState, *, max_iterations_reached: bool) -> Co
         if hit is None:
             # keep the fabricated id in the list so finalize_assessment can
             # log and drop it uniformly with the deterministic path.
-            evidence_spans.append(
-                EvidenceSpan(chunk_id=cid, quote="", relevance_note="")
-            )
+            evidence_spans.append(EvidenceSpan(chunk_id=cid, quote="", relevance_note=""))
         else:
             evidence_spans.append(
                 EvidenceSpan(

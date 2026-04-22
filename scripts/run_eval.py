@@ -101,9 +101,7 @@ def main(
         console.print(f"\n[bold cyan]▶[/bold cyan] {doc.name}")
         det = run_strategy(doc, agentic=False, settings=settings)
         _write_per_run(det, output)
-        console.print(
-            f"  deterministic: {det.wall_time_s:5.1f}s  llm={det.n_llm_calls}"
-        )
+        console.print(f"  deterministic: {det.wall_time_s:5.1f}s  llm={det.n_llm_calls}")
         agt = run_strategy(doc, agentic=True, settings=settings)
         _write_per_run(agt, output)
         console.print(
@@ -208,8 +206,9 @@ def _write_markdown_report(
     lines.append("")
     lines.append(f"- Mean agreement: **{agg.mean_agreement_pct:.1%}**")
     lines.append(f"- Mean Cohen's kappa: **{agg.mean_kappa:.3f}**")
-    lines.append(f"- Mean evidence Jaccard (where coverage matches): "
-                 f"**{agg.mean_evidence_jaccard:.3f}**")
+    lines.append(
+        f"- Mean evidence Jaccard (where coverage matches): **{agg.mean_evidence_jaccard:.3f}**"
+    )
     lines.append("")
     lines.append("## Per-document comparison")
     lines.append("")
@@ -223,8 +222,10 @@ def _write_markdown_report(
     lines.append("")
     lines.append("## Disagreement matrix")
     lines.append("")
-    lines.append("Counts of `(deterministic_coverage, agentic_coverage)` pairs where "
-                 "the two strategies disagree.")
+    lines.append(
+        "Counts of `(deterministic_coverage, agentic_coverage)` pairs where "
+        "the two strategies disagree."
+    )
     lines.append("")
     for c in comparisons_list:
         lines.append(f"### {c.doc_path.name}")

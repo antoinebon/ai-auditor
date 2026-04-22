@@ -183,6 +183,52 @@ flowchart LR
   (or pgvector/Qdrant) for index reuse across runs and for
   cross-document retrieval.
 
+## Observability + evaluation
+
+MLflow is the single backend for both **traces** (one span tree per
+`ai-auditor analyze` invocation) and **experiments** (one nested-run
+session per `scripts/run_eval.py` invocation).
+
+### Tracing
+
+Every `analyze` call enables `mlflow.langchain.autolog()` automatically;
+each LLM call, graph node, and tool call becomes a span. For the
+agentic path, `run_retrieval_agent` is wrapped in an `@mlflow.trace`
+parent span tagged with the control id, so each control's decision tree
+shows up as a separate trace.
+
+- With no server running, traces go to the local `./mlruns` file store.
+  View them later with `make mlflow-ui`.
+- With `docker compose up -d mlflow`, traces ship to the MLflow server
+  at `http://localhost:5000` and show up in the UI immediately.
+- Disable with `--no-mlflow` (handy for offline / CI).
+
+### Strategy evaluation
+
+`scripts/run_eval.py` runs both graph strategies on each sample PDF,
+compares them, and writes an MLflow session with nested runs:
+
+```
+make eval             # fast: small 6-control corpus, all three sample PDFs
+make eval-full        # full 33-control corpus (~5-10 min on llama3.2:3b)
+```
+
+Metrics captured:
+- **Cross-strategy agreement**: per-control coverage match rate + Cohen's
+  kappa (accounts for chance agreement).
+- **Evidence Jaccard**: where the two strategies agree on coverage, how
+  much do the cited chunk_ids overlap.
+- **Performance**: wall-time, LLM call count, tool-call count per
+  `(doc, strategy)` pair.
+
+Artefacts: `out-eval/metrics.json`, `out-eval/report.md`, plus one
+`<doc_stem>/<strategy>/report.{json,md}` per run. Same artefacts land
+as MLflow run artefacts when the logger is enabled.
+
+No ground-truth labels are used — this is comparative + performance
+evaluation only. Absolute verdict quality would need expert-annotated
+test data (discussed in "For production" above).
+
 ## Development
 
 ```
@@ -193,9 +239,14 @@ make typecheck      # mypy src/
 make test           # pytest
 make check          # lint + typecheck + test
 make docker-build   # docker build -t ai-auditor .
+make compose-up     # docker compose up -d mlflow  (MLflow server at :5000)
+make compose-down   # docker compose down
+make mlflow-ui      # local `mlflow ui` against ./mlruns (no Docker)
 make run-min        # analyse the minimal sample PDF
 make run-real       # analyse Northwestern University's published policy
 make run-agentic    # analyse the SANS-style sample with --agentic
+make eval           # strategy evaluation on the small corpus
+make eval-full      # strategy evaluation on the full 33-control corpus
 ```
 
 ## AI assistance disclosure

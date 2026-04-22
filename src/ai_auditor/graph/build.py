@@ -72,8 +72,7 @@ def compile_graph(
     def fan_out(state: MainState) -> list[Send]:
         parsed = state["parsed"]
         return [
-            Send("assess_one_control", {"control": c, "parsed": parsed})
-            for c in resolved_controls
+            Send("assess_one_control", {"control": c, "parsed": parsed}) for c in resolved_controls
         ]
 
     # LangGraph's node-signature generics don't infer our plain callables

@@ -72,9 +72,7 @@ def log_session(
                 mlflow.log_artifact(str(path))
 
         for cmp in comparisons_list:
-            mlflow.log_metric(
-                f"agreement_pct.{cmp.doc_path.stem}", cmp.agreement_pct
-            )
+            mlflow.log_metric(f"agreement_pct.{cmp.doc_path.stem}", cmp.agreement_pct)
             mlflow.log_metric(f"kappa.{cmp.doc_path.stem}", cmp.cohens_kappa)
 
         for run in runs_list:

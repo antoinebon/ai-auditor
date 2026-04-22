@@ -47,9 +47,7 @@ class AggregateMetrics:
 # ---------------------------------------------------------------------------
 
 
-def pair_by_control(
-    det: Report, agt: Report
-) -> list[tuple[ControlAssessment, ControlAssessment]]:
+def pair_by_control(det: Report, agt: Report) -> list[tuple[ControlAssessment, ControlAssessment]]:
     """Align the two reports' assessments by ``control_id``.
 
     Only controls present in both reports are paired; extras on either
