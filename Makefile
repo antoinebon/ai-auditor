@@ -2,6 +2,7 @@
         docker-build compose-up compose-down \
         mlflow-ui \
         run-min run-real run-sans run-agentic \
+        run-min-docker \
         eval eval-full
 
 sync:
@@ -51,6 +52,12 @@ run-sans:
 
 run-agentic:
 	uv run ai-auditor analyze data/examples/sans_acceptable_use.pdf --agentic
+
+# Analyse the minimal sample PDF via docker compose. Assumes the
+# mlflow service is already up (`make compose-up`) and Ollama is
+# reachable on the host at 11434.
+run-min-docker:
+	docker compose run --rm ai-auditor analyze /app/data/examples/minimal_policy.pdf
 
 # --- Strategy evaluation --------------------------------------------
 
