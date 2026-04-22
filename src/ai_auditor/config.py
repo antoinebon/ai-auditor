@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2")
     controls_path: Path = Field(default=Path("data/controls/iso27001_annex_a.yaml"))
 
+    # MLflow tracing / experiment tracking. Empty tracking URI falls
+    # through to MLflow's default (``./mlruns`` local file store).
+    mlflow_tracking_uri: str = Field(default="")
+    mlflow_experiment: str = Field(default="ai-auditor")
+
 
 def load_settings() -> Settings:
     return Settings()

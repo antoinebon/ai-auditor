@@ -16,6 +16,7 @@ from ai_auditor.graph.build import compile_graph
 from ai_auditor.llm import make_llm
 from ai_auditor.models import Report
 from ai_auditor.render import write_outputs
+from ai_auditor.tracing import init_tracing
 
 app = typer.Typer(
     name="ai-auditor",
@@ -67,6 +68,14 @@ def analyze(
             help="Skip the LLM-generated executive summary; use a deterministic one.",
         ),
     ] = False,
+    mlflow_enabled: Annotated[
+        bool,
+        typer.Option(
+            "--mlflow/--no-mlflow",
+            help="Enable MLflow tracing (default: on). Traces go to MLFLOW_TRACKING_URI, "
+            "or ./mlruns when that env var is empty.",
+        ),
+    ] = True,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable debug logging."),
@@ -75,11 +84,12 @@ def analyze(
     """Analyse a policy PDF against the ISO 27001 Annex A corpus."""
     _configure_logging(verbose)
     settings = load_settings()
+    init_tracing(settings, enabled=mlflow_enabled)
     console.print(
         f"[bold]Analysing[/bold] {pdf}\n"
         f"  model={settings.ollama_model} @ {settings.ollama_host}\n"
         f"  controls={settings.controls_path}\n"
-        f"  agentic={agentic}\n"
+        f"  agentic={agentic}  mlflow={mlflow_enabled}\n"
     )
     summary_llm = None if skip_summary else make_llm(settings, temperature=0.2)
     graph = compile_graph(settings, agentic=agentic, summary_llm=summary_llm)
