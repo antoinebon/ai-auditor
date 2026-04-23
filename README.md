@@ -35,13 +35,18 @@ wrote out/report.md
 
 ### Prerequisites
 
-- Python 3.12 and [uv](https://docs.astral.sh/uv/).
-- A running [Ollama](https://ollama.com/) with a tool-calling /
-  JSON-mode-capable model pulled:
+- Python 3.12 and [uv](https://docs.astral.sh/uv/) — for running from
+  source.
+- [Ollama](https://ollama.com/) with a tool-calling / JSON-mode-capable
+  model pulled — for running from source:
 
   ```
   ollama pull qwen2.5:7b-instruct
   ```
+
+- Or just Docker + `docker compose` — the compose stack runs Ollama in
+  a container and pulls the model automatically (see "Run in Docker"
+  below).
 
 ### Run from source
 
@@ -59,17 +64,30 @@ retrieval for a bounded ReAct retrieval agent that also writes an
 
 ### Run in Docker
 
-The image is slim; Ollama stays on the host.
+`docker compose` brings up Ollama (CPU-only), a one-shot model-pull
+sidecar, and MLflow alongside the app — no host Ollama required. The
+first run pulls the configured model (~4 GB for `qwen2.5:7b-instruct`)
+into a named volume; subsequent runs reuse it.
 
 ```
-docker build -t ai-auditor .
-docker run --rm \
-    --add-host=host.docker.internal:host-gateway \
-    -e OLLAMA_HOST=http://host.docker.internal:11434 \
-    -v "$PWD/data:/app/data" \
-    -v "$PWD/out:/app/out" \
-    ai-auditor analyze /app/data/examples/minimal_policy.pdf
+make compose-up        # start mlflow + ollama + pull the model
+make run-min-docker    # analyse data/examples/minimal_policy.pdf
 ```
+
+Or directly:
+
+```
+docker compose up -d mlflow ollama ollama-pull
+docker compose run --rm ai-auditor analyze /app/data/examples/minimal_policy.pdf
+```
+
+Change the model with `OLLAMA_MODEL=llama3.2:3b make compose-up` (or
+set it in your shell before running compose). To re-pull after changing
+the model without tearing the stack down: `make compose-pull-model`.
+
+To use a host Ollama instead, override `OLLAMA_HOST` on the
+`ai-auditor` service (e.g. `OLLAMA_HOST=http://host.docker.internal:11434`)
+and add `extra_hosts: ["host.docker.internal:host-gateway"]`.
 
 ## Architecture
 
@@ -199,8 +217,8 @@ shows up as a separate trace.
 
 - With no server running, traces go to the local `./mlruns` file store.
   View them later with `make mlflow-ui`.
-- With `docker compose up -d mlflow`, traces ship to the MLflow server
-  at `http://localhost:5000` and show up in the UI immediately.
+- With `make compose-up`, traces ship to the MLflow server at
+  `http://localhost:5000` and show up in the UI immediately.
 - Disable with `--no-mlflow` (handy for offline / CI).
 
 ### Strategy evaluation
@@ -239,8 +257,9 @@ make typecheck      # mypy src/
 make test           # pytest
 make check          # lint + typecheck + test
 make docker-build   # docker build -t ai-auditor .
-make compose-up     # docker compose up -d mlflow  (MLflow server at :5000)
+make compose-up     # docker compose up -d mlflow ollama ollama-pull
 make compose-down   # docker compose down
+make compose-pull-model  # re-pull OLLAMA_MODEL into the ollama volume
 make mlflow-ui      # local `mlflow ui` against ./mlruns (no Docker)
 make run-min        # analyse the minimal sample PDF
 make run-real       # analyse Northwestern University's published policy

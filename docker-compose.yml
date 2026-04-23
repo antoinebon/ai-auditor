@@ -1,8 +1,43 @@
-# MLflow tracking server + ai-auditor app, wired together.
-# Ollama runs on the host; both containers reach it through
-# host.docker.internal:host-gateway.
+# MLflow tracking server + Ollama + ai-auditor app, wired together.
+# Everything runs in containers — no host Ollama required. Ollama runs
+# CPU-only; the first run pulls the model (~4 GB for qwen2.5:7b-instruct)
+# into the named volume, subsequent runs reuse it.
+#
+# To use a host Ollama instead, override OLLAMA_HOST on the ai-auditor
+# service (e.g. `OLLAMA_HOST=http://host.docker.internal:11434`) and add
+# `extra_hosts: ["host.docker.internal:host-gateway"]`.
 
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-auditor-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  # One-shot sidecar: waits for Ollama to be healthy, pulls the configured
+  # model, and exits. ai-auditor depends on this completing successfully,
+  # so the app never starts before the model is available.
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: ai-auditor-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b-instruct}
+    entrypoint: /bin/sh
+    command: -c 'ollama pull "$$OLLAMA_MODEL"'
+    restart: "no"
+
   mlflow:
     build:
       context: .
@@ -32,13 +67,13 @@ services:
     depends_on:
       mlflow:
         condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
     environment:
-      OLLAMA_HOST: http://host.docker.internal:11434
+      OLLAMA_HOST: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b-instruct}
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MLFLOW_EXPERIMENT: ai-auditor
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
       - ./out:/app/out
@@ -48,3 +83,4 @@ services:
 
 volumes:
   mlflow_data:
+  ollama_data:

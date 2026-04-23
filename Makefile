@@ -29,11 +29,19 @@ check: lint typecheck test
 docker-build:
 	docker build -t ai-auditor .
 
+# Bring up the supporting services (MLflow + Ollama). On first run the
+# ollama-pull sidecar downloads the model (~4 GB for qwen2.5:7b-instruct);
+# follow progress with `docker compose logs -f ollama-pull`.
 compose-up:
-	docker compose up -d mlflow
+	docker compose up -d mlflow ollama ollama-pull
 
 compose-down:
 	docker compose down
+
+# Pull (or re-pull) the configured OLLAMA_MODEL into the ollama volume.
+# Useful when changing OLLAMA_MODEL without tearing the stack down.
+compose-pull-model:
+	docker compose up --no-deps ollama-pull
 
 mlflow-ui:
 	@echo "Launching local MLflow UI against ./mlruns (Ctrl-C to stop)"
@@ -53,9 +61,10 @@ run-sans:
 run-agentic:
 	uv run ai-auditor analyze data/examples/sans_acceptable_use.pdf --agentic
 
-# Analyse the minimal sample PDF via docker compose. Assumes the
-# mlflow service is already up (`make compose-up`) and Ollama is
-# reachable on the host at 11434.
+# Analyse the minimal sample PDF via docker compose. Infra (MLflow +
+# Ollama + model pull) is brought up automatically via depends_on; on
+# first run expect a multi-minute wait while the model is pulled into
+# the ollama_data volume.
 run-min-docker:
 	docker compose run --rm ai-auditor analyze /app/data/examples/minimal_policy.pdf
 
