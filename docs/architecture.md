@@ -564,6 +564,29 @@ a factory — but gains two things:
 - Multiple pipelines can run in the same process with different
   configurations without touching globals.
 
+```mermaid
+flowchart LR
+    S[Settings] --> CG[compile_graph]
+    Ov[caller kwargs] --> CG
+
+    CG --> C[load_controls]
+    CG --> E[Embedder]
+    CG --> V[VectorStore]
+    CG --> M[make_llm]
+
+    C -.-> Fan[fan_out closure]
+    E -.-> EN[embed_chunks node]
+    V -.-> EN
+    E -.-> AN[assess_one_control node]
+    V -.-> AN
+    M -.-> AN
+    M -.-> SN[synthesize node]
+
+    EN & AN & SN --> SG[StateGraph]
+    Fan --> SG
+    SG --> Compiled[CompiledStateGraph]
+```
+
 ---
 
 ## 10. Observability
@@ -689,101 +712,3 @@ Edit `data/controls/iso27001_annex_a.yaml`. Each entry needs `id`, `title`,
 **Add a new output format.**
 Add a renderer in `render.py` that consumes a `Report` and writes a file.
 Call it alongside `render_markdown` in the CLI.
-
----
-
-## 14. Diagrams appendix
-
-### Full pipeline, including external systems
-
-```mermaid
-flowchart TB
-    subgraph Input
-      PDF[Policy PDF]
-      YAML[Controls YAML]
-    end
-
-    subgraph Graph["LangGraph pipeline"]
-      parse[parse_pdf]
-      chunk[chunk_document]
-      embed[embed_chunks]
-      fan((fan-out<br/>Send per control))
-      assess[assess_one_control<br/>× N in parallel]
-      synth[synthesize]
-    end
-
-    subgraph Services
-      ST[sentence-transformers]
-      Chroma[(ChromaDB<br/>ephemeral)]
-      Ollama[(Ollama<br/>JSON mode)]
-    end
-
-    subgraph Output
-      JSON[report.json]
-      MD[report.md]
-    end
-
-    PDF --> parse --> chunk --> embed
-    YAML -.loaded once.-> fan
-    embed --> fan --> assess --> synth
-    embed --> ST
-    embed --> Chroma
-    assess --> Chroma
-    assess --> Ollama
-    synth --> Ollama
-    synth --> JSON
-    synth --> MD
-```
-
-### Per-control sequence
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant G as LangGraph
-    participant A as assess_one_control
-    participant R as retrieve_for_control
-    participant V as VectorStore
-    participant L as LLM
-    participant F as finalize_assessment
-
-    G->>A: PerControlState(control, parsed)
-    A->>R: (control, embedder, store)
-    R->>R: pick queries (YAML or fallback)
-    R->>V: encode + query per phrasing
-    V-->>R: hits per query
-    R->>R: dedupe + rank + take top final_k
-    R-->>A: hits
-    A->>A: render user prompt (hits inline)
-    A->>L: call_json(system, user, ControlAssessment)
-    L-->>A: raw ControlAssessment
-    A->>F: finalize(..., valid_chunk_ids)
-    F-->>A: validated ControlAssessment
-    A-->>G: {"assessments": [one]}
-    Note over G: reducer concatenates across branches
-```
-
-### Dependency wiring at compile time
-
-```mermaid
-flowchart LR
-    S[Settings] --> CG[compile_graph]
-    Ov[caller kwargs] --> CG
-
-    CG --> C[load_controls]
-    CG --> E[Embedder]
-    CG --> V[VectorStore]
-    CG --> M[make_llm]
-
-    C -.-> Fan[fan_out closure]
-    E -.-> EN[embed_chunks node]
-    V -.-> EN
-    E -.-> AN[assess_one_control node]
-    V -.-> AN
-    M -.-> AN
-    M -.-> SN[synthesize node]
-
-    EN & AN & SN --> SG[StateGraph]
-    Fan --> SG
-    SG --> Compiled[CompiledStateGraph]
-```
