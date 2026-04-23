@@ -1,10 +1,12 @@
 """Deterministic multi-query retrieval for one control.
 
 For each control we embed a set of pre-generated query phrasings, query the
-vector store once per phrasing, and union the hits by chunk id keeping the
-best similarity score. This mitigates the vocabulary gap between a
+vector store once per phrasing, and union the hits by section id keeping
+the best similarity score. This mitigates the vocabulary gap between a
 compliance framework's wording and the target policy's wording — a
-single-embedding query often misses hits that use synonyms.
+single-embedding query often misses hits that use synonyms — and keeps at
+most one excerpt per section in the assessment prompt (the citation
+granularity is section-level; see ``EvidenceSpan.section_id``).
 
 When a control has no pre-generated queries yet, we fall back to a single
 query built from its title + description. The behaviour and output shape
@@ -37,9 +39,10 @@ def retrieve_for_control(
     best: dict[str, QueryHit] = {}
     for hits in per_query_hits:
         for hit in hits:
-            existing = best.get(hit.chunk_id)
+            section_id = str(hit.metadata.get("section_id", hit.chunk_id))
+            existing = best.get(section_id)
             if existing is None or hit.similarity > existing.similarity:
-                best[hit.chunk_id] = hit
+                best[section_id] = hit
 
     ordered = sorted(best.values(), key=lambda h: h.similarity, reverse=True)
     return ordered[:final_k]

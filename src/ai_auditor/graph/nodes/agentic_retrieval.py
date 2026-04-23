@@ -75,11 +75,23 @@ class ListSectionsArgs(BaseModel):
     pass  # no arguments
 
 
+class EvidenceArg(BaseModel):
+    section_id: str = Field(
+        description="Section id you received from search_policy or read_section."
+    )
+    relevance_note: str = Field(
+        description="One sentence explaining why this section supports the verdict."
+    )
+
+
 class FinalizeArgs(BaseModel):
     coverage: str = Field(description="One of: covered, partial, not_covered.")
-    evidence_chunk_ids: list[str] = Field(
+    evidence: list[EvidenceArg] = Field(
         default_factory=list,
-        description="Chunk ids you actually received. Must not be invented.",
+        description=(
+            "Cited evidence. Each item pairs a section_id you actually received "
+            "with a one-sentence relevance note. Do not invent section_ids."
+        ),
     )
     reasoning: str = Field(description="2-4 sentences justifying the coverage judgment.")
     confidence: str = Field(description="One of: low, medium, high.")
@@ -160,6 +172,7 @@ class _AgentState:
         self.control = control
         self.document = document
         self.seen_hits: dict[str, QueryHit] = {}
+        self.seen_sections: set[str] = set()
         self.search_count = 0
         self.pending_finalize: FinalizeArgs | None = None
 
@@ -174,9 +187,12 @@ def _build_tools(
         [hits] = store.query(embedder.encode([query]), top_k=top_k)
         for h in hits:
             state.seen_hits[h.chunk_id] = h
+            sid = h.metadata.get("section_id")
+            if isinstance(sid, str):
+                state.seen_sections.add(sid)
         payload = [
             {
-                "chunk_id": h.chunk_id,
+                "section_id": h.metadata.get("section_id", ""),
                 "similarity": round(h.similarity, 3),
                 "section_heading": h.metadata.get("section_heading", ""),
                 "page_start": h.metadata.get("page_start"),
@@ -190,6 +206,7 @@ def _build_tools(
     def read_section(section_id: str) -> str:
         for section in state.document.sections:
             if section.id == section_id:
+                state.seen_sections.add(section.id)
                 return json.dumps(
                     {
                         "section_id": section.id,
@@ -216,7 +233,7 @@ def _build_tools(
 
     def finalize(
         coverage: str,
-        evidence_chunk_ids: list[str] | None = None,
+        evidence: list[dict[str, str]] | None = None,
         reasoning: str = "",
         confidence: str = "low",
     ) -> str:
@@ -224,7 +241,7 @@ def _build_tools(
         # called when LangChain materialises the tool — not the path we use.
         state.pending_finalize = FinalizeArgs(
             coverage=coverage,
-            evidence_chunk_ids=list(evidence_chunk_ids or []),
+            evidence=[EvidenceArg.model_validate(e) for e in (evidence or [])],
             reasoning=reasoning,
             confidence=confidence,
         )
@@ -298,24 +315,14 @@ def _build_assessment(state: _AgentState, *, max_iterations_reached: bool) -> Co
         )
         confidence = "low"
 
-    # Build EvidenceSpans from the agent's seen_hits so they carry the real
-    # quote text and section heading, then delegate to the shared
-    # finalize_assessment for chunk-id validation + coverage coercion.
-    evidence_spans: list[EvidenceSpan] = []
-    for cid in final.evidence_chunk_ids:
-        hit = state.seen_hits.get(cid)
-        if hit is None:
-            # keep the fabricated id in the list so finalize_assessment can
-            # log and drop it uniformly with the deterministic path.
-            evidence_spans.append(EvidenceSpan(chunk_id=cid, quote="", relevance_note=""))
-        else:
-            evidence_spans.append(
-                EvidenceSpan(
-                    chunk_id=cid,
-                    quote=hit.document[:300].strip(),
-                    relevance_note=hit.metadata.get("section_heading", ""),
-                )
-            )
+    # Build EvidenceSpans straight from the agent's structured finalize
+    # args and delegate to the shared finalize_assessment for section-id
+    # validation + coverage coercion. Sections touched via read_section
+    # are citable because they're in state.seen_sections.
+    evidence_spans: list[EvidenceSpan] = [
+        EvidenceSpan(section_id=e.section_id, relevance_note=e.relevance_note)
+        for e in final.evidence
+    ]
 
     assessment = finalize_assessment(
         control_id=state.control.id,
@@ -323,7 +330,7 @@ def _build_assessment(state: _AgentState, *, max_iterations_reached: bool) -> Co
         confidence=confidence,
         reasoning=reasoning,
         evidence=evidence_spans,
-        valid_chunk_ids=set(state.seen_hits),
+        valid_section_ids=state.seen_sections,
     )
 
     if max_iterations_reached:

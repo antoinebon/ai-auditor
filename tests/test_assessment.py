@@ -46,17 +46,28 @@ def _control(cid: str = "A.5.15") -> Control:
     )
 
 
-def _hit(chunk_id: str, text: str = "Access is reviewed quarterly.") -> QueryHit:
+def _hit(
+    chunk_id: str,
+    *,
+    section_id: str = "s_01",
+    text: str = "Access is reviewed quarterly.",
+    similarity: float = 0.87,
+) -> QueryHit:
     return QueryHit(
         chunk_id=chunk_id,
-        similarity=0.87,
-        metadata={"section_heading": "Access", "page_start": 1, "page_end": 1},
+        similarity=similarity,
+        metadata={
+            "section_id": section_id,
+            "section_heading": "Access",
+            "page_start": 1,
+            "page_end": 1,
+        },
         document=text,
     )
 
 
 def test_assessment_parses_covered_response() -> None:
-    evidence = [_hit("c_0001"), _hit("c_0002")]
+    evidence = [_hit("c_0001", section_id="s_01"), _hit("c_0002", section_id="s_02")]
     llm = FakeLLM(
         [
             {
@@ -64,8 +75,7 @@ def test_assessment_parses_covered_response() -> None:
                 "coverage": "covered",
                 "evidence": [
                     {
-                        "chunk_id": "c_0001",
-                        "quote": "Access is reviewed quarterly.",
+                        "section_id": "s_01",
                         "relevance_note": "Sets a review cadence.",
                     }
                 ],
@@ -77,19 +87,19 @@ def test_assessment_parses_covered_response() -> None:
     result = assess_control(_control(), evidence, llm)  # type: ignore[arg-type]
     assert result.coverage == "covered"
     assert result.confidence == "high"
-    assert [e.chunk_id for e in result.evidence] == ["c_0001"]
+    assert [e.section_id for e in result.evidence] == ["s_01"]
 
 
-def test_fabricated_chunk_ids_are_dropped() -> None:
-    evidence = [_hit("c_0001")]
+def test_fabricated_section_ids_are_dropped() -> None:
+    evidence = [_hit("c_0001", section_id="s_01")]
     llm = FakeLLM(
         [
             {
                 "control_id": "A.5.15",
                 "coverage": "partial",
                 "evidence": [
-                    {"chunk_id": "c_0001", "quote": "...", "relevance_note": "real"},
-                    {"chunk_id": "c_9999", "quote": "...", "relevance_note": "fabricated"},
+                    {"section_id": "s_01", "relevance_note": "real"},
+                    {"section_id": "s_99", "relevance_note": "fabricated"},
                 ],
                 "reasoning": "Mixed evidence.",
                 "confidence": "medium",
@@ -97,19 +107,19 @@ def test_fabricated_chunk_ids_are_dropped() -> None:
         ]
     )
     result = assess_control(_control(), evidence, llm)  # type: ignore[arg-type]
-    assert [e.chunk_id for e in result.evidence] == ["c_0001"]
+    assert [e.section_id for e in result.evidence] == ["s_01"]
     assert result.coverage == "partial"
 
 
 def test_covered_with_only_fabricated_ids_coerced_to_not_covered() -> None:
-    evidence = [_hit("c_0001")]
+    evidence = [_hit("c_0001", section_id="s_01")]
     llm = FakeLLM(
         [
             {
                 "control_id": "A.5.15",
                 "coverage": "covered",
                 "evidence": [
-                    {"chunk_id": "c_9999", "quote": "...", "relevance_note": "fake"},
+                    {"section_id": "s_99", "relevance_note": "fake"},
                 ],
                 "reasoning": "All evidence fabricated.",
                 "confidence": "high",
@@ -142,7 +152,7 @@ def test_not_covered_empty_evidence_ok() -> None:
 
 def test_retry_on_validation_error() -> None:
     """First response is invalid JSON-for-schema; retry succeeds."""
-    evidence = [_hit("c_0001")]
+    evidence = [_hit("c_0001", section_id="s_01")]
     llm = FakeLLM(
         [
             # First attempt: missing required "reasoning" field.

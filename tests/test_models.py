@@ -45,7 +45,7 @@ def test_control_assessment_round_trip() -> None:
         control_id="A.5.15",
         coverage="partial",
         evidence=[
-            EvidenceSpan(chunk_id="c_0001", quote="Access is reviewed.", relevance_note="..."),
+            EvidenceSpan(section_id="s_01", relevance_note="Sets access-review cadence."),
         ],
         reasoning="Partial because review cadence is unspecified.",
         confidence="medium",

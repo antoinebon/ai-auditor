@@ -16,7 +16,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from ai_auditor.graph.state import MainState
 from ai_auditor.llm import content_text
-from ai_auditor.models import ControlAssessment, Report, ReportStats
+from ai_auditor.models import ControlAssessment, Report, ReportStats, SectionRef
 
 
 def make_synthesize_node(
@@ -32,6 +32,19 @@ def make_synthesize_node(
         stats = _compute_stats(assessments)
         parsed = state.get("parsed")
         summary = _compose_summary(assessments, stats, summary_llm)
+        sections = (
+            [
+                SectionRef(
+                    id=s.id,
+                    heading=s.heading,
+                    page_start=s.page_start,
+                    page_end=s.page_end,
+                )
+                for s in parsed.sections
+            ]
+            if parsed is not None
+            else []
+        )
         report = Report(
             document_path=state["document_path"],
             document_title=parsed.title if parsed else None,
@@ -41,6 +54,7 @@ def make_synthesize_node(
             assessments=assessments,
             summary=summary,
             stats=stats,
+            sections=sections,
         )
         return {"report": report}
 

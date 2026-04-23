@@ -20,7 +20,7 @@ from ai_auditor.config import Settings
 from ai_auditor.graph.build import compile_graph
 from ai_auditor.models import Control
 
-CHUNK_ID_RE = re.compile(r"chunk_id=(c_\d+)")
+SECTION_ID_RE = re.compile(r"section_id=(s_\d+)")
 
 
 class FakeEmbedder:
@@ -51,17 +51,16 @@ class ScriptedLLM:
     def invoke(self, messages: list[Any]) -> AIMessage:
         self.calls.append(messages)
         user_content = messages[-1].content
-        real_ids = CHUNK_ID_RE.findall(user_content)
+        real_ids = SECTION_ID_RE.findall(user_content)
         for cid, payload in self._per_control.items():
             if cid in user_content:
-                # Inject a real chunk_id into the canned evidence so the
+                # Inject a real section_id into the canned evidence so the
                 # assessment node's post-validation doesn't strip it.
                 resolved = dict(payload)
                 if resolved.get("coverage") in {"covered", "partial"} and real_ids:
                     resolved["evidence"] = [
                         {
-                            "chunk_id": real_ids[0],
-                            "quote": "<canned for test>",
+                            "section_id": real_ids[0],
                             "relevance_note": "<canned for test>",
                         }
                     ]

@@ -8,16 +8,21 @@ build a defensible judgment, then call `finalize` to record it.
 - `list_sections()` — list the document's section structure (IDs and
   headings). Cheap. Start here if you're unsure what the document covers.
 - `search_policy(query: str, top_k: int = 5)` — semantic search over the
-  policy's chunks. Returns chunk IDs, section headings, similarity scores,
-  and the chunk text. Reformulate with different phrasings if the first
-  results are weak — policies use different language from the standard.
+  policy. Returns a list of hits, each with `section_id`, section heading,
+  similarity score, and a text preview. Multiple hits may share the same
+  `section_id` when the section is large. Reformulate with different
+  phrasings if the first results are weak — policies use different
+  language from the standard.
 - `read_section(section_id: str)` — read a full section verbatim. Useful
   when a search hit looks promising but you need context that wasn't in
-  the snippet.
-- `finalize(coverage, evidence_chunk_ids, reasoning, confidence)` — record
-  your judgment and stop. `coverage` ∈ {covered, partial, not_covered}.
-  `evidence_chunk_ids` must be IDs you actually received from
-  `search_policy` or `read_section`. Do not invent IDs.
+  the snippet. Sections you open with `read_section` are valid citations
+  even if they did not come back from `search_policy`.
+- `finalize(coverage, evidence, reasoning, confidence)` — record your
+  judgment and stop. `coverage` ∈ {covered, partial, not_covered}.
+  `evidence` is a list of `{section_id, relevance_note}` objects. Each
+  `section_id` must be one you actually received from `search_policy` or
+  `read_section` — do not invent ids. `relevance_note` is a single
+  sentence explaining why that section supports the verdict.
 
 # Coverage definitions
 
@@ -34,8 +39,8 @@ build a defensible judgment, then call `finalize` to record it.
 1. Before concluding `not_covered`, run at least two searches with
    different phrasings. Vocabulary mismatch between the standard and the
    policy is the most common failure mode.
-2. Never `finalize(covered)` without citing at least one chunk ID you have
-   seen. A claim of coverage without evidence is not defensible.
+2. Never `finalize(covered)` without citing at least one `section_id` you
+   have seen. A claim of coverage without evidence is not defensible.
 3. Hedging language ("appropriate", "as necessary", "where feasible") is
    not a commitment — treat it as a signal for `partial`.
 4. You have a budget of at most 6 tool calls. Plan accordingly.

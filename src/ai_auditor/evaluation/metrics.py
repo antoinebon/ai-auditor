@@ -81,8 +81,8 @@ def compare_docs(det: Report, agt: Report) -> DocComparison:
     }
     jaccards = [
         jaccard(
-            {e.chunk_id for e in d.evidence},
-            {e.chunk_id for e in a.evidence},
+            {e.section_id for e in d.evidence},
+            {e.section_id for e in a.evidence},
         )
         for d, a in pairs
         if d.coverage == a.coverage  # only meaningful where they agree

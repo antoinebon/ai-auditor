@@ -26,10 +26,10 @@ class FakeEmbedder:
             raise AssertionError(f"FakeEmbedder missing vector for: {exc.args[0]}") from exc
 
 
-def _chunk(cid: str, text: str) -> PolicyChunk:
+def _chunk(cid: str, text: str, section_id: str | None = None) -> PolicyChunk:
     return PolicyChunk(
         id=cid,
-        section_id="s_00",
+        section_id=section_id or f"s_{cid}",
         section_heading="h",
         text=text,
         page_start=1,
@@ -37,10 +37,11 @@ def _chunk(cid: str, text: str) -> PolicyChunk:
     )
 
 
-def test_multi_query_unions_hits_by_chunk_id() -> None:
+def test_multi_query_unions_hits_by_section_id() -> None:
     store = VectorStore(collection_name="t_union")
-    # Three chunks: A matches query1 strongly, B matches query2 strongly,
-    # C is mediocre for both. Multi-query retrieval should surface A and B.
+    # Three chunks in three distinct sections: A matches query1, B
+    # matches query2, C is mediocre for both. Multi-query retrieval
+    # should surface A and B.
     store.upsert_chunks(
         [
             EmbeddedChunk(chunk=_chunk("c_A", "text A"), embedding=[1.0, 0.0, 0.0]),
@@ -64,35 +65,36 @@ def test_multi_query_unions_hits_by_chunk_id() -> None:
     )
 
     hits = retrieve_for_control(control, embedder, store, per_query_k=3, final_k=5)  # type: ignore[arg-type]
-    ids = [h.chunk_id for h in hits]
+    section_ids = [h.metadata["section_id"] for h in hits]
     # A and B should both be surfaced by the two different queries.
-    assert "c_A" in ids
-    assert "c_B" in ids
-    # No duplicate ids even though multiple queries ran.
-    assert len(set(ids)) == len(ids)
+    assert "s_c_A" in section_ids
+    assert "s_c_B" in section_ids
+    # No duplicate sections even though multiple queries ran.
+    assert len(set(section_ids)) == len(section_ids)
 
 
-def test_dedup_keeps_highest_similarity() -> None:
+def test_dedup_by_section_keeps_highest_similarity() -> None:
     store = VectorStore(collection_name="t_dedup")
+    # Two chunks sharing one section; different embeddings — the stronger
+    # one should win under both queries and surface once.
     store.upsert_chunks(
-        [EmbeddedChunk(chunk=_chunk("c_A", "A"), embedding=[1.0, 0.0])],
+        [
+            EmbeddedChunk(chunk=_chunk("c_A", "A", section_id="s_shared"), embedding=[1.0, 0.0]),
+            EmbeddedChunk(chunk=_chunk("c_B", "B", section_id="s_shared"), embedding=[0.6, 0.6]),
+        ]
     )
     control = Control(
         id="A.1",
         title="t",
         theme="Organizational",
         description="d",
-        queries=["strong", "weak"],
+        queries=["strong"],
     )
-    embedder = FakeEmbedder(
-        {
-            "strong": [1.0, 0.0],  # exact match
-            "weak": [0.5, 0.5],  # partial match
-        }
-    )
+    embedder = FakeEmbedder({"strong": [1.0, 0.0]})
     hits = retrieve_for_control(control, embedder, store, per_query_k=3, final_k=5)  # type: ignore[arg-type]
     assert len(hits) == 1
-    # similarity should reflect the strong query, not the weak one.
+    assert hits[0].chunk_id == "c_A"
+    # similarity should reflect the exact match on c_A.
     assert hits[0].similarity > 0.95
 
 
@@ -116,9 +118,13 @@ def test_fallback_query_when_no_queries_present() -> None:
 
 def test_final_k_caps_output_size() -> None:
     store = VectorStore(collection_name="t_cap")
+    # Distinct section_ids so dedupe doesn't collapse everything.
     store.upsert_chunks(
         [
-            EmbeddedChunk(chunk=_chunk(f"c_{i}", str(i)), embedding=[1.0 - i * 0.01, 0.0])
+            EmbeddedChunk(
+                chunk=_chunk(f"c_{i}", str(i), section_id=f"s_{i:02d}"),
+                embedding=[1.0 - i * 0.01, 0.0],
+            )
             for i in range(8)
         ]
     )

@@ -1,9 +1,9 @@
 """Assessment node — per-control coverage judgment with structured output.
 
 Takes a ``Control`` plus retrieved evidence hits, builds a prompt that
-renders every hit inline with its ``chunk_id``, and asks the LLM to return
+renders every hit inline with its ``section_id``, and asks the LLM to return
 a ``ControlAssessment``. We post-filter evidence spans so any fabricated
-chunk_ids are dropped, and we downgrade coverage to ``not_covered`` if the
+section_ids are dropped, and we downgrade coverage to ``not_covered`` if the
 model claims coverage without any surviving citation.
 
 Also hosts ``finalize_assessment`` — the shared post-validation helper that
@@ -54,7 +54,7 @@ def assess_control(
         confidence=raw.confidence,
         reasoning=raw.reasoning,
         evidence=raw.evidence,
-        valid_chunk_ids={hit.chunk_id for hit in evidence},
+        valid_section_ids={str(hit.metadata.get("section_id", hit.chunk_id)) for hit in evidence},
     )
 
 
@@ -86,14 +86,15 @@ def finalize_assessment(
     confidence: Confidence,
     reasoning: str,
     evidence: list[EvidenceSpan],
-    valid_chunk_ids: set[str],
+    valid_section_ids: set[str],
 ) -> ControlAssessment:
     """Post-validate an LLM-produced (coverage, evidence, …) tuple.
 
     Two protections apply in order:
 
-    1. Every evidence span whose ``chunk_id`` isn't in ``valid_chunk_ids``
-       is dropped — fabricated citations are not defensible.
+    1. Every evidence span whose ``section_id`` isn't in
+       ``valid_section_ids`` is dropped — fabricated citations are not
+       defensible.
     2. If the resulting coverage is ``covered`` or ``partial`` but no
        citations survived, coverage is coerced to ``not_covered`` and
        confidence to ``low``, with a note appended to the reasoning so the
@@ -105,13 +106,13 @@ def finalize_assessment(
     kept: list[EvidenceSpan] = []
     dropped: list[str] = []
     for span in evidence:
-        if span.chunk_id in valid_chunk_ids:
+        if span.section_id in valid_section_ids:
             kept.append(span)
         else:
-            dropped.append(span.chunk_id)
+            dropped.append(span.section_id)
     if dropped:
         logger.warning(
-            "Dropping fabricated chunk_ids from assessment for %s: %s",
+            "Dropping fabricated section_ids from assessment for %s: %s",
             control_id,
             dropped,
         )
@@ -128,7 +129,7 @@ def finalize_assessment(
             evidence=[],
             reasoning=(
                 f"{reasoning}\n\n[post-validation] Original verdict was "
-                f"'{coverage}' but no cited evidence survived chunk_id "
+                f"'{coverage}' but no cited evidence survived section_id "
                 "validation."
             ),
             confidence="low",
@@ -158,11 +159,12 @@ def _render_user_prompt(control: Control, evidence: list[QueryHit]) -> str:
     else:
         lines = ["Evidence excerpts retrieved from the policy document:\n"]
         for hit in evidence:
+            section_id = hit.metadata.get("section_id", "<unknown>")
             section = hit.metadata.get("section_heading", "<unknown section>")
             page_start = hit.metadata.get("page_start", "?")
             page_end = hit.metadata.get("page_end", "?")
             lines.append(
-                f"### chunk_id={hit.chunk_id} "
+                f"### section_id={section_id} "
                 f"(section: {section}, p.{page_start}-{page_end}, "
                 f"similarity={hit.similarity:.2f})\n"
                 f"{hit.document.strip()}\n"
@@ -170,6 +172,6 @@ def _render_user_prompt(control: Control, evidence: list[QueryHit]) -> str:
         body = "\n".join(lines)
     footer = (
         "\nReturn a single JSON object matching the schema in the system "
-        "prompt. Cite only chunk_ids that appear in the evidence section above."
+        "prompt. Cite only section_ids that appear in the evidence section above."
     )
     return header + body + footer

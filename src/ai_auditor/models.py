@@ -73,11 +73,31 @@ class EmbeddedChunk(BaseModel):
 
 
 class EvidenceSpan(BaseModel):
-    """A single evidence citation supporting an assessment."""
+    """A single evidence citation supporting an assessment.
 
-    chunk_id: str
-    quote: str = Field(description="Verbatim or near-verbatim excerpt from the chunk.")
-    relevance_note: str = Field(description="Why this evidence is relevant to the control.")
+    Cites a policy section by id; the rendered report looks up the
+    section's heading and page range from ``Report.sections``. The
+    ``relevance_note`` is the LLM's one-sentence justification for
+    this particular citation — the overall verdict reasoning lives
+    on ``ControlAssessment.reasoning``.
+    """
+
+    section_id: str
+    relevance_note: str = Field(description="Why this section supports the verdict.")
+
+
+class SectionRef(BaseModel):
+    """Report-side view of a parsed ``Section`` — no text, just metadata.
+
+    Shipped on ``Report.sections`` so renderers can resolve
+    ``EvidenceSpan.section_id`` to a human-readable heading + page range
+    without needing to re-parse the source PDF.
+    """
+
+    id: str
+    heading: str
+    page_start: int = Field(ge=1)
+    page_end: int = Field(ge=1)
 
 
 class ControlAssessment(BaseModel):
@@ -111,3 +131,7 @@ class Report(BaseModel):
     assessments: list[ControlAssessment]
     summary: str = Field(description="LLM-generated executive summary paragraph.")
     stats: ReportStats
+    sections: list[SectionRef] = Field(
+        default_factory=list,
+        description="Section registry — evidence spans look up heading + page range here.",
+    )

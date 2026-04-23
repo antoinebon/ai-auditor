@@ -19,9 +19,9 @@ you. You are reviewing one control at a time.
 
 1. Base your judgment *only* on the evidence excerpts provided. Do not use
    outside knowledge about what the organisation "probably" does.
-2. Cite evidence by `chunk_id` exactly as shown. Do not invent ids. If you
-   cannot cite a specific chunk that supports your conclusion, you should
-   not claim coverage.
+2. Cite evidence by `section_id` exactly as shown. Do not invent ids. If
+   you cannot cite a specific section that supports your conclusion, you
+   should not claim coverage.
 3. A policy mentioning a topic is not the same as addressing the control.
    "We take security seriously" is not coverage of any specific control.
 4. Hedging language such as "appropriate", "as necessary", "where feasible"
@@ -42,9 +42,8 @@ before or after.
   "coverage": "covered" | "partial" | "not_covered",
   "evidence": [
     {
-      "chunk_id": "<id from the evidence section>",
-      "quote": "<short quote or paraphrase from that chunk>",
-      "relevance_note": "<one sentence on why this supports the coverage judgment>"
+      "section_id": "<section id from the evidence section>",
+      "relevance_note": "<one sentence on why this section supports the coverage judgment>"
     }
   ],
   "reasoning": "<2-4 sentences explaining your judgment, referencing the evidence>",

@@ -10,6 +10,7 @@ from ai_auditor.models import (
     EvidenceSpan,
     Report,
     ReportStats,
+    SectionRef,
 )
 from ai_auditor.render import render_markdown, write_outputs
 
@@ -27,8 +28,7 @@ def _report(tmp_path: Path) -> Report:
                 coverage="covered",
                 evidence=[
                     EvidenceSpan(
-                        chunk_id="c_0001",
-                        quote="Access is reviewed quarterly.",
+                        section_id="s_01",
                         relevance_note="Sets a review cadence.",
                     ),
                 ],
@@ -58,6 +58,10 @@ def _report(tmp_path: Path) -> Report:
                 }
             },
         ),
+        sections=[
+            SectionRef(id="s_01", heading="Access Control", page_start=3, page_end=4),
+            SectionRef(id="s_02", heading="Incident Response", page_start=5, page_end=6),
+        ],
     )
 
 
@@ -73,9 +77,11 @@ def test_render_markdown_contains_expected_sections(tmp_path: Path) -> None:
     assert "A.5.15" in md and "A.5.24" in md
     assert "✅" in md
     assert "❌" in md
-    # Evidence shows the chunk id and quote.
-    assert "c_0001" in md
-    assert "Access is reviewed quarterly." in md
+    # Evidence shows the section id, resolved heading, and pages.
+    assert "`s_01`" in md
+    assert "Access Control" in md
+    assert "p.3-4" in md
+    assert "Sets a review cadence." in md
 
 
 def test_write_outputs_writes_json_and_md(tmp_path: Path) -> None:

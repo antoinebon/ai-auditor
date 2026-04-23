@@ -30,9 +30,7 @@ def _assessment(
     return ControlAssessment(
         control_id=cid,
         coverage=coverage,  # type: ignore[arg-type]
-        evidence=[
-            EvidenceSpan(chunk_id=c, quote="q", relevance_note="n") for c in (evidence_ids or [])
-        ],
+        evidence=[EvidenceSpan(section_id=s, relevance_note="n") for s in (evidence_ids or [])],
         reasoning="...",
         confidence="medium",
     )

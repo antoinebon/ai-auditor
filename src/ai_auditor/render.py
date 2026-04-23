@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_auditor.models import ControlAssessment, Report
+from ai_auditor.models import ControlAssessment, Report, SectionRef
 
 COVERAGE_ICON = {
     "covered": "✅",
@@ -51,8 +51,9 @@ def render_markdown(report: Report) -> str:
         lines.append("")
     lines.append("## Per-control findings")
     lines.append("")
+    sections_by_id = {s.id: s for s in report.sections}
     for a in report.assessments:
-        lines.extend(_render_assessment(a))
+        lines.extend(_render_assessment(a, sections_by_id))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -67,7 +68,7 @@ def write_outputs(report: Report, out_dir: Path) -> tuple[Path, Path]:
     return json_path, md_path
 
 
-def _render_assessment(a: ControlAssessment) -> list[str]:
+def _render_assessment(a: ControlAssessment, sections_by_id: dict[str, SectionRef]) -> list[str]:
     icon = COVERAGE_ICON.get(a.coverage, "•")
     lines = [
         f"### {icon} {a.control_id} — {a.coverage} ({a.confidence})",
@@ -78,7 +79,12 @@ def _render_assessment(a: ControlAssessment) -> list[str]:
         lines.append("")
         lines.append("**Evidence:**")
         for span in a.evidence:
-            quote = span.quote.strip().replace("\n", " ")
-            lines.append(f"- `{span.chunk_id}` — {quote}  ")
+            ref = sections_by_id.get(span.section_id)
+            if ref is not None:
+                lines.append(
+                    f"- `{span.section_id}` — {ref.heading} (p.{ref.page_start}-{ref.page_end})"
+                )
+            else:
+                lines.append(f"- `{span.section_id}`")
             lines.append(f"  _{span.relevance_note.strip()}_")
     return lines
