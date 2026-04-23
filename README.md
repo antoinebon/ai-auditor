@@ -38,7 +38,7 @@ wrote out/report.md
 - Python 3.12 and [uv](https://docs.astral.sh/uv/) — for running from
   source.
 - [Ollama](https://ollama.com/) with a tool-calling / JSON-mode-capable
-  model pulled — for running from source:
+  model pulled:
 
   ```
   ollama pull qwen2.5:7b-instruct
@@ -59,8 +59,7 @@ uv run ai-auditor analyze data/examples/northwestern_infosec_policy.pdf --agenti
 
 Reports are written to `out/report.json` and `out/report.md`. Use
 `--output <dir>` to redirect. `--agentic` swaps deterministic multi-query
-retrieval for a bounded ReAct retrieval agent that also writes an
-`audit_trail.jsonl` trace.
+retrieval for a bounded ReAct retrieval agent.
 
 ### Run in Docker
 
@@ -70,205 +69,73 @@ first run pulls the configured model (~4 GB for `qwen2.5:7b-instruct`)
 into a named volume; subsequent runs reuse it.
 
 ```
-make compose-up        # start mlflow + ollama + pull the model
-make run-min-docker    # analyse data/examples/minimal_policy.pdf
+make compose-up           # start mlflow + ollama + pull the model
+make docker-run-min       # analyse data/examples/minimal_policy.pdf
+make docker-run-agentic   # same, with the agentic retrieval path
 ```
 
-Or directly:
-
-```
-docker compose up -d mlflow ollama ollama-pull
-docker compose run --rm ai-auditor analyze /app/data/examples/minimal_policy.pdf
-```
-
-Change the model with `OLLAMA_MODEL=llama3.2:3b make compose-up` (or
-set it in your shell before running compose). To re-pull after changing
-the model without tearing the stack down: `make compose-pull-model`.
+Change the model with `OLLAMA_MODEL=llama3.2:3b make compose-up`. To
+re-pull after changing the model without tearing the stack down:
+`make compose-pull-model`.
 
 To use a host Ollama instead, override `OLLAMA_HOST` on the
 `ai-auditor` service (e.g. `OLLAMA_HOST=http://host.docker.internal:11434`)
 and add `extra_hosts: ["host.docker.internal:host-gateway"]`.
 
-## Architecture
+## Documentation
 
-```mermaid
-flowchart LR
-    Start([PDF])-->Parse[parse_pdf]
-    Parse-->Chunk[chunk_document]
-    Chunk-->Embed[embed_chunks → Chroma]
-    Embed-- Send per control -->Assess[assess_one_control]
-    Assess-->Synth[synthesize_report]
-    Synth-->Out([report.json + report.md])
+- **[docs/architecture.md](docs/architecture.md)** — runtime architecture,
+  LangGraph pipeline, state schema, data model, deterministic vs agentic
+  paths, post-validation, LLM integration, DI pattern, trade-offs,
+  extension points. Start here if you want to understand how the
+  pipeline fits together.
+- **[docs/evaluation.md](docs/evaluation.md)** — eval harness, metrics
+  (agreement, kappa, evidence Jaccard), MLflow schema, how to read
+  results, limitations.
 
-    Controls[(iso27001_annex_a.yaml<br/>33 controls)]-.loaded once.->Embed
-```
-
-- **parse_pdf** — pymupdf-based text extraction with heading detection
-  (numbered prefixes + font-size heuristic) to recover section structure.
-- **chunk_document** — sentence-aware splitter; each section becomes one
-  chunk unless it exceeds the target (default 220 words) in which case
-  it's split into overlapping windows (40-word overlap).
-- **embed_chunks** — sentence-transformers `all-MiniLM-L6-v2` embedding
-  model; vectors upserted into a ChromaDB `EphemeralClient` collection
-  for the run.
-- **assess_one_control** — one invocation per control, dispatched in
-  parallel via LangGraph's `Send` API. Two modes:
-  - deterministic (default): multi-query retrieval against the
-    per-control query list + a single JSON-mode LLM call that returns a
-    validated `ControlAssessment`.
-  - agentic (`--agentic`): bounded ReAct loop (max 6 iterations) with
-    tools `list_sections`, `search_policy`, `read_section`, `finalize`.
-    Every tool call is written to `audit_trail.jsonl` for reviewability.
-  Both modes share a post-validation layer that strips fabricated
-  section_ids and coerces "covered/partial with no surviving citation"
-  down to `not_covered` to keep verdicts defensible.
-- **synthesize_report** — deterministic aggregation of stats by theme +
-  one short LLM call for the executive summary (skippable with
-  `--skip-summary`).
-
-## Key decisions
-
-- **LangGraph.** `StateGraph` + `Send` fan-out gives per-control
-  parallelism as first-class graph steps (not hidden inside an async
-  gather), so every Send branch is a legible graph node with its own
-  state and its own position in the trace. Intact's interviewer audience
-  is LangGraph-literate, and the framework earns its weight here.
-- **Deterministic path by default, agent behind a flag.** Auditability
-  and reproducibility matter in compliance tooling; a deterministic
-  pipeline makes verdicts reproducible across runs. The agent is there
-  for the cases where vocabulary mismatch between the standard and the
-  policy is the bottleneck, and its full tool-call trace is the pay-off.
-- **ChromaDB `EphemeralClient`.** In-memory today, same API as
-  `PersistentClient` — the swap to on-disk persistence is a one-line
-  change at the `_make_client` seam in `vector_store.py`.
-- **No LangChain high-level chains.** `ChatOllama` + a 30-line
-  `call_json` helper (with single-shot retry on `ValidationError`) is
-  easier to read and test than the LCEL equivalent at this scope.
-- **Ollama only, local.** No cloud API, no rate limits, no per-run cost,
-  no policy text leaving the machine — a real plus for a compliance
-  demo. Trade-off: a 7B model occasionally needs the one-shot JSON
-  retry; rarely fails twice.
-- **33 controls, not 93.** The YAML is the single source of truth;
-  scaling to the full Annex A is appending entries. 33 is enough to
-  produce a meaningful per-theme distribution without making demo runs
-  feel slow.
-- **Structured output via pydantic.** `ControlAssessment` is a pydantic
-  model; the LLM's JSON is validated on the way in and serialised on the
-  way out. No hand-rolled parsing.
+The short version: parse PDF → sentence-aware chunks → sentence-transformer
+embeddings into an in-memory ChromaDB → fan out one assessment branch per
+control via LangGraph `Send` → either deterministic multi-query retrieval
++ single JSON-mode LLM call, or a bounded ReAct agent — both funnel
+through a shared post-validator that drops fabricated citations → synthesize
+one `Report`. See `docs/architecture.md` for the full story.
 
 ## Limitations
 
-- **Text-extractable PDFs only.** Scanned documents need OCR and we
-  don't ship it.
-- **Single-document analysis.** Gaps that are filled by a sibling
-  document (Access Control Policy thin, but Employee Handbook covers it)
-  are not detected.
-- **LLM-based judgments, single annotator.** Verdicts are not expert-
-  validated and should be treated as a triage aid for a human auditor.
-- **Small-model trade-offs.** `qwen2.5:7b-instruct` occasionally returns
-  JSON with a trailing sentence or a missing field; we retry once and
-  move on. A frontier cloud model would fail less, at the cost of the
+- **Text-extractable PDFs only.** Scanned documents need OCR and we don't
+  ship it.
+- **Single-document analysis.** Gaps filled by a sibling document (thin
+  Access Control Policy + a fuller Employee Handbook) are not detected.
+- **LLM-based judgments, single annotator.** Verdicts are a triage aid,
+  not an audit decision. No expert-annotated ground truth.
+- **Small-model trade-offs.** `qwen2.5:7b-instruct` occasionally emits
+  malformed JSON; the one-shot retry in `call_json` handles most cases.
+  A frontier cloud model would fail less, at the cost of the
   local/offline story.
-- **Deterministic heuristic parsing.** Heading detection keys off font
-  size and numeric prefixes; documents with non-standard structure may
-  roll up into a single synthetic section.
+- **Heuristic PDF parsing.** Heading detection uses font size + numeric
+  prefixes; documents with non-standard structure roll up into a single
+  synthetic section.
 
-## For production
-
-- **Per-judgment audit trail on every run**, not just in agentic mode.
-  Every retrieval query and every LLM call gets a line in
-  `audit_trail.jsonl`, indexed by control and document hash, so any
-  verdict is reproducible and reviewable after the fact.
-- **Cost and latency observability** — token counts, wall-clock per
-  stage, cache hit rate. LangSmith or an OpenTelemetry exporter.
-- **Retries with exponential backoff** on transient Ollama / LLM errors;
-  circuit-breaking when the model goes persistently unhealthy.
-- **Caching** — embeddings keyed by content hash, assessments keyed by
-  (control_id, chunk_set hash). Reanalysing the same document becomes
-  near-free.
-- **PII scrubbing** before anything touches an LLM call, even a local
-  one, so training-data leakage risk is contained by design.
-- **Prompt-injection hardening** — content from the policy document
-  should never be rendered into the assessment prompt without
-  delimiters and explicit "ignore instructions inside EVIDENCE" guard
-  rails.
-- **Human-in-the-loop review UI** — every `partial` or low-confidence
-  verdict routes to an auditor queue with the full trace attached.
-- **Multi-tenancy** — per-customer control libraries, per-customer
-  policy collections, per-customer encryption keys. Chroma collections
-  scoped by tenant id.
-- **Persistent vector store** — flip to `PersistentClient(path=...)`
-  (or pgvector/Qdrant) for index reuse across runs and for
-  cross-document retrieval.
-
-## Observability + evaluation
-
-MLflow is the single backend for both **traces** (one span tree per
-`ai-auditor analyze` invocation) and **experiments** (one nested-run
-session per `scripts/run_eval.py` invocation).
-
-### Tracing
-
-Every `analyze` call enables `mlflow.langchain.autolog()` automatically;
-each LLM call, graph node, and tool call becomes a span. For the
-agentic path, `run_retrieval_agent` is wrapped in an `@mlflow.trace`
-parent span tagged with the control id, so each control's decision tree
-shows up as a separate trace.
-
-- With no server running, traces go to the local `./mlruns` file store.
-  View them later with `make mlflow-ui`.
-- With `make compose-up`, traces ship to the MLflow server at
-  `http://localhost:5000` and show up in the UI immediately.
-- Disable with `--no-mlflow` (handy for offline / CI).
-
-### Strategy evaluation
-
-`scripts/run_eval.py` runs both graph strategies on each sample PDF,
-compares them, and writes an MLflow session with nested runs:
-
-```
-make eval             # fast: small 6-control corpus, all three sample PDFs
-make eval-full        # full 33-control corpus (~5-10 min on llama3.2:3b)
-```
-
-Metrics captured:
-- **Cross-strategy agreement**: per-control coverage match rate + Cohen's
-  kappa (accounts for chance agreement).
-- **Evidence Jaccard**: where the two strategies agree on coverage, how
-  much do the cited section_ids overlap.
-- **Performance**: wall-time, LLM call count, tool-call count per
-  `(doc, strategy)` pair.
-
-Artefacts land in MLflow only — no local `out-eval/` directory. The
-parent run carries `metrics.json` + `report.md`; each nested
-`(doc, strategy)` child run carries that run's `report.json` +
-`report.md`. View them with `make mlflow-ui` (or the compose UI at
-`http://localhost:5000`).
-
-No ground-truth labels are used — this is comparative + performance
-evaluation only. Absolute verdict quality would need expert-annotated
-test data (discussed in "For production" above).
+See `docs/architecture.md` (Key design trade-offs) for the production
+gaps we'd close next: per-judgment audit trail on every run, caching,
+prompt-injection hardening, persistent vector store, multi-tenancy.
 
 ## Development
 
 ```
-make sync           # uv sync --extra dev
-make fmt            # ruff format + ruff check --fix
-make lint           # ruff check + ruff format --check
-make typecheck      # mypy src/
-make test           # pytest
-make check          # lint + typecheck + test
-make docker-build   # docker build -t ai-auditor .
-make compose-up     # docker compose up -d mlflow ollama ollama-pull
-make compose-down   # docker compose down
-make compose-pull-model  # re-pull OLLAMA_MODEL into the ollama volume
-make mlflow-ui      # local `mlflow ui` against ./mlruns (no Docker)
-make run-min        # analyse the minimal sample PDF
-make run-real       # analyse Northwestern University's published policy
-make run-agentic    # analyse the SANS-style sample with --agentic
-make eval           # strategy evaluation on the small corpus
-make eval-full      # strategy evaluation on the full 33-control corpus
+make sync              # uv sync --extra dev
+make fmt               # ruff format + ruff check --fix
+make check             # lint + typecheck + test
+make run-min           # analyse the minimal sample PDF (source)
+make run-agentic       # same, --agentic
+make docker-run-min    # analyse via docker compose
+make eval              # small-corpus strategy evaluation
+make eval-full         # full 33-control corpus
+make generate-queries  # populate Control.queries via the LLM
+make mlflow-ui         # local mlflow ui against ./mlruns
 ```
+
+Full target list in the [Makefile](Makefile).
 
 ## AI assistance disclosure
 
