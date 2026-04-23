@@ -54,11 +54,19 @@ def compile_graph(
         assessment_llm if assessment_llm is not None else make_llm(settings, json_mode=not agentic)
     )
 
-    assess_node: Any = (
-        make_agentic_assess_node(resolved_embedder, resolved_store, resolved_llm)
-        if agentic
-        else make_assess_one_control_node(resolved_embedder, resolved_store, resolved_llm)
-    )
+    assess_node: Any
+    if agentic:
+        # The agent node uses tool-calling mode; the finalize node inside
+        # the subgraph needs a JSON-mode model to emit the structured
+        # AssessmentResponse.
+        finalize_llm = make_llm(settings, json_mode=True)
+        assess_node = make_agentic_assess_node(
+            resolved_embedder, resolved_store, resolved_llm, finalize_llm
+        )
+    else:
+        assess_node = make_assess_one_control_node(
+            resolved_embedder, resolved_store, resolved_llm
+        )
 
     # State-shaped adapters over the pure functions. Inlined here because
     # they don't close over deps and only exist so the graph can call them

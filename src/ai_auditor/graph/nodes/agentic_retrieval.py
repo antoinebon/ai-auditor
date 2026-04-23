@@ -1,23 +1,31 @@
-"""Bounded ReAct retrieval agent (per-control).
+"""LangGraph subgraph for agentic retrieval (per-control).
 
-Hand-rolled agent loop using ``BaseChatModel.bind_tools`` + LangChain's tool
-message convention. Four tools:
+Replaces a former hand-rolled ReAct loop with a three-node subgraph:
 
-- ``list_sections``   — show the document's table of contents
-- ``search_policy``   — semantic search over policy chunks
-- ``read_section``    — read a full section verbatim
-- ``finalize``        — record the coverage judgment and terminate
+- ``agent``     — tool-calling LLM turn; appends the model's response
+                  to ``MessagesState.messages``.
+- ``tools``     — standard ``ToolNode`` dispatch of ``list_sections``,
+                  ``search_policy``, ``read_section``. Finalize is no
+                  longer a tool.
+- ``finalize``  — one JSON-mode LLM call (via ``call_json``) that turns
+                  the investigation transcript into an
+                  ``AssessmentResponse`` and writes it to
+                  ``structured_response`` in state.
 
-The loop is capped at ``max_iterations`` LLM calls. Tracing is handled by
-MLflow's LangChain autolog plus an ``@mlflow.trace`` parent span on
-``run_retrieval_agent`` — see ``ai_auditor.tracing``. There is no
-bespoke on-disk trace writer; inspect traces via ``mlflow ui``.
+The conditional edge on ``agent`` routes to ``tools`` while the last AI
+message carries tool calls and to ``finalize`` once the model answers
+with plain text. The outer wrapper (``run_retrieval_agent``) captures
+per-invocation mutable state in ``_AgentRun`` via tool closures so
+search hits accumulate into ``seen_hits`` / ``seen_sections`` across
+turns, then routes the finalize response through the shared
+``finalize_assessment`` post-validator.
 
-If the agent hits the iteration cap without calling ``finalize``, or the
-model returns text without any tool call, we emit a low-confidence
-``not_covered`` assessment with whatever evidence was touched. We never
-silently drop into "I don't know" — the caller always gets a
-``ControlAssessment``.
+Iteration cap is enforced by ``config={"recursion_limit": ...}`` at
+invoke time. A ``GraphRecursionError`` (or a missing structured
+response) yields the low-confidence ``_fallback_assessment``. MLflow
+autolog traces the subgraph's inner LLM + tool spans; a single
+``@mlflow.trace`` wraps the wrapper so each per-control invocation
+shows up as a labelled parent span.
 """
 
 from __future__ import annotations
@@ -26,16 +34,21 @@ import json
 import logging
 from collections.abc import Callable
 from importlib import resources
-from typing import Any
+from typing import Any, Literal
 
 import mlflow
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
+from langgraph.errors import GraphRecursionError
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import MessagesState
+from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from ai_auditor.embedding import Embedder
 from ai_auditor.graph.nodes.assessment import finalize_assessment
+from ai_auditor.llm import call_json
 from ai_auditor.models import (
     Confidence,
     Control,
@@ -51,14 +64,20 @@ logger = logging.getLogger(__name__)
 _AGENT_PROMPT = (
     resources.files("ai_auditor.prompts").joinpath("retrieval_agent.md").read_text(encoding="utf-8")
 )
+_FINALIZE_PROMPT = (
+    resources.files("ai_auditor.prompts").joinpath("agent_finalize.md").read_text(encoding="utf-8")
+)
 
 MAX_ITERATIONS_DEFAULT = 6
 MIN_SEARCHES_BEFORE_NOT_COVERED = 2
+# Each ReAct turn visits two nodes (agent + tools); the finalize tail
+# adds two more (agent no-tools + finalize). Keep a small padding so a
+# legitimately chatty run does not trip the cap on edge turns.
+_RECURSION_LIMIT_PADDING = 4
 
 
 # ---------------------------------------------------------------------------
-# Tool argument schemas — LangChain's StructuredTool uses these for the
-# function-calling schema exposed to the model.
+# Tool argument + response schemas
 # ---------------------------------------------------------------------------
 
 
@@ -84,17 +103,19 @@ class EvidenceArg(BaseModel):
     )
 
 
-class FinalizeArgs(BaseModel):
+class AssessmentResponse(BaseModel):
+    """Structured terminus of the subgraph — what the ``finalize`` node emits."""
+
     coverage: str = Field(description="One of: covered, partial, not_covered.")
-    evidence: list[EvidenceArg] = Field(
-        default_factory=list,
-        description=(
-            "Cited evidence. Each item pairs a section_id you actually received "
-            "with a one-sentence relevance note. Do not invent section_ids."
-        ),
-    )
+    evidence: list[EvidenceArg] = Field(default_factory=list)
     reasoning: str = Field(description="2-4 sentences justifying the coverage judgment.")
     confidence: str = Field(description="One of: low, medium, high.")
+
+
+class AgentState(MessagesState):
+    """``MessagesState`` extended with the finalize node's structured output."""
+
+    structured_response: AssessmentResponse | None
 
 
 # ---------------------------------------------------------------------------
@@ -108,65 +129,140 @@ def run_retrieval_agent(
     document: ParsedDocument,
     embedder: Embedder,
     store: VectorStore,
-    llm: BaseChatModel,
+    llm_tools: BaseChatModel,
+    llm_json: BaseChatModel,
     *,
     max_iterations: int = MAX_ITERATIONS_DEFAULT,
 ) -> ControlAssessment:
-    """Run the agent loop for ``control`` and return a ``ControlAssessment``.
+    """Compile and run the agent subgraph for ``control``.
 
-    The ``@mlflow.trace`` decorator wraps each per-control invocation in a
-    parent span tagged with the control id; the underlying LLM and tool
-    calls show up as nested spans via ``mlflow.langchain.autolog``. When
-    MLflow tracing is disabled the decorator is a no-op.
+    ``llm_tools`` is the tool-calling model used inside the ``agent`` node;
+    ``llm_json`` is the JSON-mode model used once in the ``finalize`` node
+    to emit a structured assessment. The subgraph is compiled per
+    invocation because tools close over per-control mutable state;
+    compiling a three-node graph is cheap.
     """
     mlflow.update_current_trace(tags={"control_id": control.id, "control_title": control.title})
-    state = _AgentState(control=control, document=document)
-    tools = _build_tools(state, embedder, store)
-    llm_with_tools = llm.bind_tools([t for _, t in tools])
-    tool_map = dict(tools)
+    run = _AgentRun(control=control, document=document)
+    tools = _build_tools(run, embedder, store)
+    subgraph = _build_subgraph(llm_tools.bind_tools(tools), llm_json, tools)
 
-    messages: list[Any] = [
-        SystemMessage(content=_AGENT_PROMPT),
-        HumanMessage(content=_control_prompt(control)),
-    ]
+    initial: dict[str, Any] = {
+        "messages": [
+            SystemMessage(content=_AGENT_PROMPT),
+            HumanMessage(content=_control_prompt(control)),
+        ],
+        "structured_response": None,
+    }
+    recursion_limit = max_iterations * 2 + _RECURSION_LIMIT_PADDING
 
-    for _iteration in range(max_iterations):
-        response: AIMessage = llm_with_tools.invoke(messages)
-        messages.append(response)
+    try:
+        result = subgraph.invoke(initial, config={"recursion_limit": recursion_limit})
+    except GraphRecursionError:
+        logger.warning(
+            "Agent for %s hit recursion limit (%d); returning fallback",
+            control.id,
+            recursion_limit,
+        )
+        return _fallback_assessment(run, reason="recursion_limit")
 
-        tool_calls = getattr(response, "tool_calls", None) or []
-        if not tool_calls:
-            # Model answered without using tools — nothing more to dispatch.
-            break
+    response = result.get("structured_response")
+    if response is None:
+        logger.warning(
+            "Agent for %s terminated without a structured_response; returning fallback",
+            control.id,
+        )
+        return _fallback_assessment(run, reason="no_structured_response")
 
-        finalized = False
-        for call in tool_calls:
-            name = call["name"]
-            args = call.get("args", {}) or {}
-            call_id = call.get("id", f"call_{_iteration}")
-
-            if name == "finalize":
-                state.pending_finalize = FinalizeArgs.model_validate(args)
-                finalized = True
-                break
-
-            tool = tool_map.get(name)
-            result = f"unknown tool: {name}" if tool is None else tool.invoke(args)
-            messages.append(ToolMessage(content=result, tool_call_id=call_id))
-
-        if finalized:
-            break
-
-    return _build_assessment(state, max_iterations_reached=(state.pending_finalize is None))
+    return _build_assessment_from_response(run, response)
 
 
 # ---------------------------------------------------------------------------
-# Internal state + tool construction
+# Subgraph construction
 # ---------------------------------------------------------------------------
 
 
-class _AgentState:
-    """Mutable per-run state the tools read and write."""
+def _build_subgraph(
+    llm_with_tools: BaseChatModel,
+    llm_json: BaseChatModel,
+    tools: list[StructuredTool],
+) -> Any:
+    """Compile the three-node agent subgraph.
+
+    Edges: ``START → agent``, conditional from ``agent`` to either
+    ``tools`` (if tool calls present) or ``finalize`` (otherwise),
+    ``tools → agent``, ``finalize → END``.
+    """
+
+    def agent(state: AgentState) -> dict[str, list[BaseMessage]]:
+        response = llm_with_tools.invoke(state["messages"])
+        return {"messages": [response]}
+
+    def should_continue(state: AgentState) -> Literal["tools", "finalize"]:
+        last = state["messages"][-1]
+        if getattr(last, "tool_calls", None):
+            return "tools"
+        return "finalize"
+
+    def finalize(state: AgentState) -> dict[str, Any]:
+        transcript = _render_investigation(state["messages"])
+        response = call_json(
+            llm_json,
+            system=_FINALIZE_PROMPT,
+            user=transcript,
+            schema=AssessmentResponse,
+        )
+        return {"structured_response": response}
+
+    graph: StateGraph[Any, Any, Any, Any] = StateGraph(AgentState)
+    graph.add_node("agent", agent)
+    graph.add_node("tools", ToolNode(tools))
+    graph.add_node("finalize", finalize)
+    graph.add_edge(START, "agent")
+    graph.add_conditional_edges(
+        "agent",
+        should_continue,
+        {"tools": "tools", "finalize": "finalize"},
+    )
+    graph.add_edge("tools", "agent")
+    graph.add_edge("finalize", END)
+    return graph.compile()
+
+
+def _render_investigation(messages: list[BaseMessage]) -> str:
+    """Stringify the agent transcript for the finalize LLM.
+
+    ``call_json`` takes a ``user: str`` so the transcript is rendered as
+    plain text rather than passed as structured messages. The finalize
+    prompt (in ``agent_finalize.md``) is loaded as the system slot.
+    """
+    lines: list[str] = ["Investigation transcript:", ""]
+    for msg in messages:
+        if isinstance(msg, SystemMessage):
+            continue
+        if isinstance(msg, HumanMessage):
+            lines.append(f"USER:\n{msg.content}\n")
+        elif isinstance(msg, AIMessage):
+            if msg.content:
+                lines.append(f"ASSISTANT NOTE:\n{msg.content}\n")
+            for call in getattr(msg, "tool_calls", None) or []:
+                args_json = json.dumps(call.get("args", {}), ensure_ascii=False)
+                lines.append(f"ASSISTANT CALLED: {call['name']}({args_json})")
+        elif isinstance(msg, ToolMessage):
+            name = getattr(msg, "name", None) or "tool"
+            lines.append(f"TOOL RESULT ({name}):\n{msg.content}\n")
+    lines.append("")
+    lines.append("Produce the AssessmentResponse JSON based on this investigation.")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Per-invocation state + tool construction
+# ---------------------------------------------------------------------------
+
+
+class _AgentRun:
+    """Mutable per-invocation state the tools accumulate into."""
 
     def __init__(self, control: Control, document: ParsedDocument) -> None:
         self.control = control
@@ -174,22 +270,25 @@ class _AgentState:
         self.seen_hits: dict[str, QueryHit] = {}
         self.seen_sections: set[str] = set()
         self.search_count = 0
-        self.pending_finalize: FinalizeArgs | None = None
 
 
 def _build_tools(
-    state: _AgentState, embedder: Embedder, store: VectorStore
-) -> list[tuple[str, StructuredTool]]:
-    """Return ``(name, StructuredTool)`` pairs bound to the agent's state."""
+    run: _AgentRun, embedder: Embedder, store: VectorStore
+) -> list[StructuredTool]:
+    """Return the three investigation tools, each closed over ``run``.
+
+    The ``finalize`` tool is gone — the subgraph's ``finalize`` node
+    produces the structured response instead.
+    """
 
     def search_policy(query: str, top_k: int = 5) -> str:
-        state.search_count += 1
+        run.search_count += 1
         [hits] = store.query(embedder.encode([query]), top_k=top_k)
         for h in hits:
-            state.seen_hits[h.chunk_id] = h
+            run.seen_hits[h.chunk_id] = h
             sid = h.metadata.get("section_id")
             if isinstance(sid, str):
-                state.seen_sections.add(sid)
+                run.seen_sections.add(sid)
         payload = [
             {
                 "section_id": h.metadata.get("section_id", ""),
@@ -204,9 +303,9 @@ def _build_tools(
         return json.dumps({"hits": payload}, ensure_ascii=False)
 
     def read_section(section_id: str) -> str:
-        for section in state.document.sections:
+        for section in run.document.sections:
             if section.id == section_id:
-                state.seen_sections.add(section.id)
+                run.seen_sections.add(section.id)
                 return json.dumps(
                     {
                         "section_id": section.id,
@@ -227,62 +326,28 @@ def _build_tools(
                 "level": s.level,
                 "pages": [s.page_start, s.page_end],
             }
-            for s in state.document.sections
+            for s in run.document.sections
         ]
         return json.dumps({"sections": payload}, ensure_ascii=False)
 
-    def finalize(
-        coverage: str,
-        evidence: list[dict[str, str]] | None = None,
-        reasoning: str = "",
-        confidence: str = "low",
-    ) -> str:
-        # Handled by the outer loop (state.pending_finalize); this is only
-        # called when LangChain materialises the tool — not the path we use.
-        state.pending_finalize = FinalizeArgs(
-            coverage=coverage,
-            evidence=[EvidenceArg.model_validate(e) for e in (evidence or [])],
-            reasoning=reasoning,
-            confidence=confidence,
-        )
-        return "ok"
-
     return [
-        (
-            "list_sections",
-            StructuredTool.from_function(
-                func=list_sections,
-                name="list_sections",
-                description="List section IDs, headings, and page ranges of the policy document.",
-                args_schema=ListSectionsArgs,
-            ),
+        StructuredTool.from_function(
+            func=list_sections,
+            name="list_sections",
+            description="List section IDs, headings, and page ranges of the policy document.",
+            args_schema=ListSectionsArgs,
         ),
-        (
-            "search_policy",
-            StructuredTool.from_function(
-                func=search_policy,
-                name="search_policy",
-                description="Semantic search over policy chunks. Returns chunk ids + text previews.",
-                args_schema=SearchPolicyArgs,
-            ),
+        StructuredTool.from_function(
+            func=search_policy,
+            name="search_policy",
+            description="Semantic search over policy chunks. Returns section ids + text previews.",
+            args_schema=SearchPolicyArgs,
         ),
-        (
-            "read_section",
-            StructuredTool.from_function(
-                func=read_section,
-                name="read_section",
-                description="Read one section's full text given its section_id.",
-                args_schema=ReadSectionArgs,
-            ),
-        ),
-        (
-            "finalize",
-            StructuredTool.from_function(
-                func=finalize,
-                name="finalize",
-                description="Record the coverage judgment and stop the session.",
-                args_schema=FinalizeArgs,
-            ),
+        StructuredTool.from_function(
+            func=read_section,
+            name="read_section",
+            description="Read one section's full text given its section_id.",
+            args_schema=ReadSectionArgs,
         ),
     ]
 
@@ -292,68 +357,44 @@ def _build_tools(
 # ---------------------------------------------------------------------------
 
 
-def _build_assessment(state: _AgentState, *, max_iterations_reached: bool) -> ControlAssessment:
-    if state.pending_finalize is None:
-        logger.warning(
-            "Agent for %s hit the iteration cap without calling finalize",
-            state.control.id,
-        )
-        return _fallback_assessment(state, reason="no_finalize")
+def _build_assessment_from_response(
+    run: _AgentRun, response: AssessmentResponse
+) -> ControlAssessment:
+    coverage = _coerce_coverage(response.coverage)
+    confidence = _coerce_confidence(response.confidence)
+    reasoning = response.reasoning.strip() or "(no reasoning provided)"
 
-    final = state.pending_finalize
-    coverage = _coerce_coverage(final.coverage)
-    confidence = _coerce_confidence(final.confidence)
-    reasoning = final.reasoning.strip() or "(no reasoning provided)"
-
-    # Enforce min-searches-before-not_covered rule (agent-specific; not
-    # relevant to the deterministic path, which has a fixed query budget).
-    if coverage == "not_covered" and state.search_count < MIN_SEARCHES_BEFORE_NOT_COVERED:
+    if coverage == "not_covered" and run.search_count < MIN_SEARCHES_BEFORE_NOT_COVERED:
         logger.warning(
             "Agent for %s finalised not_covered after only %d searches; downgrading confidence",
-            state.control.id,
-            state.search_count,
+            run.control.id,
+            run.search_count,
         )
         confidence = "low"
 
-    # Build EvidenceSpans straight from the agent's structured finalize
-    # args and delegate to the shared finalize_assessment for section-id
-    # validation + coverage coercion. Sections touched via read_section
-    # are citable because they're in state.seen_sections.
     evidence_spans: list[EvidenceSpan] = [
         EvidenceSpan(section_id=e.section_id, relevance_note=e.relevance_note)
-        for e in final.evidence
+        for e in response.evidence
     ]
 
-    assessment = finalize_assessment(
-        control_id=state.control.id,
+    return finalize_assessment(
+        control_id=run.control.id,
         coverage=coverage,
         confidence=confidence,
         reasoning=reasoning,
         evidence=evidence_spans,
-        valid_section_ids=state.seen_sections,
+        valid_section_ids=run.seen_sections,
     )
 
-    if max_iterations_reached:
-        assessment = assessment.model_copy(
-            update={
-                "reasoning": (
-                    f"{assessment.reasoning}\n\n"
-                    "[meta] Agent hit iteration cap before terminating cleanly."
-                )
-            }
-        )
 
-    return assessment
-
-
-def _fallback_assessment(state: _AgentState, *, reason: str) -> ControlAssessment:
+def _fallback_assessment(run: _AgentRun, *, reason: str) -> ControlAssessment:
     return ControlAssessment(
-        control_id=state.control.id,
+        control_id=run.control.id,
         coverage="not_covered",
         evidence=[],
         reasoning=(
-            f"Agent terminated without a structured finalize ({reason}). "
-            f"Searches performed: {state.search_count}. "
+            f"Agent terminated without a structured assessment ({reason}). "
+            f"Searches performed: {run.search_count}. "
             "Coverage set to not_covered with low confidence — flag for human review."
         ),
         confidence="low",
@@ -391,7 +432,9 @@ def _control_prompt(control: Control) -> str:
         f"Control to assess: {control.id} — {control.title}\n"
         f"Theme: {control.theme}\n"
         f"Description:\n{control.description}\n\n"
-        "Investigate the policy document using your tools, then call `finalize`."
+        "Investigate the policy document using your tools. When you have "
+        "enough evidence, reply with a short plain-text summary (no more "
+        "tool calls) — a follow-up step will record the structured assessment."
     )
 
 
@@ -404,14 +447,16 @@ def make_agentic_assess_node(
     embedder: Embedder,
     store: VectorStore,
     llm: BaseChatModel,
+    finalize_llm: BaseChatModel,
     *,
     max_iterations: int = MAX_ITERATIONS_DEFAULT,
 ) -> Callable[[dict[str, Any]], dict[str, list[ControlAssessment]]]:
-    """Build a per-control node that runs the agentic retrieval path.
+    """Build a per-control node that runs the agentic retrieval subgraph.
 
-    The returned node receives a ``PerControlState``-shaped dict (control
-    + parsed document); ``run_retrieval_agent`` traces itself via MLflow
-    autolog + ``@mlflow.trace``.
+    ``llm`` is the tool-calling model used in the ``agent`` node;
+    ``finalize_llm`` is the JSON-mode model used once in the ``finalize``
+    node to emit the structured assessment. The returned node receives a
+    ``PerControlState``-shaped dict (control + parsed document).
     """
 
     def node(sub_state: dict[str, Any]) -> dict[str, list[ControlAssessment]]:
@@ -423,6 +468,7 @@ def make_agentic_assess_node(
             embedder,
             store,
             llm,
+            finalize_llm,
             max_iterations=max_iterations,
         )
         return {"assessments": [assessment]}
