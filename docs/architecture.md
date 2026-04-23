@@ -778,8 +778,9 @@ flowchart LR
 
 ## 10. Observability
 
-Covered in depth in `docs/evaluation.md` (separate); a short note here for
-completeness.
+See [`docs/evaluation.md`](evaluation.md) for the eval harness, MLflow
+schema, and how to read the output. This section covers just the
+pipeline-level instrumentation.
 
 The pipeline is instrumented in two complementary ways:
 
