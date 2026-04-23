@@ -19,7 +19,11 @@
     parties. These policies must be reviewed at planned intervals and when
     significant changes occur, to ensure continued suitability and
     effectiveness.
-  queries: []
+  queries:
+  - information security policy definition
+  - organization-wide security guidelines
+  - policy review schedule
+  - security policy publication requirements
 
 - id: A.5.2
   title: Information security roles and responsibilities
@@ -29,7 +33,11 @@
     allocated according to the organization's needs, with clear ownership
     for assets, risk management activities, and security processes.
     Accountability must be documented and communicated.
-  queries: []
+  queries:
+  - roles and responsibilities
+  - information security roles
+  - asset ownership
+  - risk management accountability
 
 - id: A.5.3
   title: Segregation of duties
@@ -40,7 +48,11 @@
     misuse of the organization's assets. Where segregation is not feasible,
     compensating controls such as monitoring and management oversight
     should be implemented.
-  queries: []
+  queries:
+  - organizational asset protection
+  - unauthorized access prevention
+  - management oversight protocols
+  - duty segregation alternatives
 
 - id: A.5.7
   title: Threat intelligence
@@ -50,7 +62,11 @@
     analyzed to produce actionable threat intelligence. This intelligence
     should inform risk assessments, security controls, and incident
     response in order to reduce the impact of threats on the organization.
-  queries: []
+  queries:
+  - threat intelligence collection
+  - organizational risk assessment
+  - security control implementation
+  - incident response planning
 
 - id: A.5.9
   title: Inventory of information and other associated assets
@@ -60,7 +76,11 @@
     their owners, should be developed and maintained. Ownership must be
     assigned so assets are appropriately classified, protected, and handled
     throughout their lifecycle.
-  queries: []
+  queries:
+  - asset ownership policy
+  - information asset classification
+  - organizational asset management
+  - inventory of sensitive data
 
 - id: A.5.10
   title: Acceptable use of information and other associated assets
@@ -70,7 +90,11 @@
     should be identified, documented, and implemented. Users must be made
     aware of these rules and their responsibilities for protecting the
     assets they handle.
-  queries: []
+  queries:
+  - acceptable use policies
+  - information asset protection guidelines
+  - user responsibilities data handling
+  - organizational asset usage rules
 
 - id: A.5.11
   title: Return of assets
@@ -80,7 +104,11 @@
     assets in their possession upon termination of employment, contract, or
     agreement. The return process must be documented and verified to
     prevent loss of assets or information.
-  queries: []
+  queries:
+  - return of company property upon termination
+  - asset return after contract end
+  - personal belongings on leaving organization
+  - documentation of asset handover procedures
 
 - id: A.5.12
   title: Classification of information
@@ -91,7 +119,11 @@
     interested party requirements. Classification schemes must be
     consistent and support appropriate handling across the information
     lifecycle.
-  queries: []
+  queries:
+  - classify information by need
+  - confidentiality classification scheme
+  - information lifecycle management
+  - consistent classification standards
 
 - id: A.5.14
   title: Information transfer
@@ -101,7 +133,11 @@
     information during transfer within the organization and with external
     parties. Controls should address all transfer channels including
     electronic, physical, and verbal communications.
-  queries: []
+  queries:
+  - Establish rules for protecting information during internal transfers
+  - Define procedures for secure data exchange with external parties
+  - Develop controls for safeguarding sensitive information in transit
+  - Outline protocols for secure communication channels within the organization
 
 - id: A.5.15
   title: Access control
@@ -111,7 +147,11 @@
     associated assets should be established and implemented based on
     business and information security requirements. Access must be granted
     according to defined criteria and reviewed periodically.
-  queries: []
+  queries:
+  - access control policies
+  - role-based access management
+  - information asset protection
+  - periodic review of user permissions
 
 - id: A.5.17
   title: Authentication information
@@ -122,7 +162,11 @@
     controlled through a formal management process. Users must be made
     aware of their responsibilities for safeguarding authentication
     information.
-  queries: []
+  queries:
+  - password management policy
+  - cryptographic key control
+  - user responsibility guidelines
+  - authentication info security procedures
 
 - id: A.5.19
   title: Information security in supplier relationships
@@ -132,7 +176,11 @@
     the information security risks associated with the use of suppliers'
     products and services. Supplier security expectations must be agreed,
     communicated, and monitored throughout the relationship.
-  queries: []
+  queries:
+  - supplier product security requirements
+  - agreed supplier security expectations
+  - monitoring supplier risk assessments
+  - communicating supplier security obligations
 
 - id: A.5.24
   title: Information security incident management planning and preparation
@@ -142,7 +190,11 @@
     security incidents by defining processes, roles, and responsibilities
     in advance. Communication channels, escalation paths, and decision
     authorities must be established before an incident occurs.
-  queries: []
+  queries:
+  - incident response planning
+  - information security incident management framework
+  - roles and responsibilities defined
+  - communication protocols for incidents
 
 - id: A.5.26
   title: Response to information security incidents
@@ -152,7 +204,11 @@
     with documented procedures, including assessment, containment,
     eradication, recovery, and communication with affected parties.
     Responses must be timed and proportionate to incident severity.
-  queries: []
+  queries:
+  - incident response procedure
+  - proportionate incident response time
+  - assessed and contained security incidents
+  - communication protocols for security breaches
 
 - id: A.5.30
   title: ICT readiness for business continuity
@@ -162,7 +218,11 @@
     based on business continuity objectives and ICT continuity
     requirements. Recovery time and recovery point objectives should be
     established and validated through regular exercises.
-  queries: []
+  queries:
+  - ICT continuity requirements
+  - recovery point objective
+  - regular testing exercises
+  - objectives based implementation
 
 - id: A.6.1
   title: Screening
@@ -172,7 +232,11 @@
     carried out prior to joining the organization, and on an ongoing basis
     where relevant. Checks should be proportionate to the sensitivity of
     the role and comply with applicable laws and regulations.
-  queries: []
+  queries:
+  - background verification process
+  - employment candidate screening requirements
+  - role-based access control checks
+  - compliance with employment law regulations
 
 - id: A.6.2
   title: Terms and conditions of employment
@@ -182,7 +246,11 @@
     the organization's responsibilities for information security.
     Confidentiality, acceptable use, and ongoing obligations should be
     clearly addressed and acknowledged.
-  queries: []
+  queries:
+  - terms of employment for information security
+  - employee confidentiality agreement
+  - organizational data protection policy
+  - contractual obligations for infosec
 
 - id: A.6.3
   title: Information security awareness, education and training
@@ -193,7 +261,11 @@
     with regular updates on organizational policies and procedures. The
     programme should reflect evolving threats and be tailored to role
     responsibilities.
-  queries: []
+  queries:
+  - training for personnel
+  - role-based security awareness
+  - evolving threat education
+  - organizational policy updates
 
 - id: A.6.8
   title: Information security event reporting
@@ -203,7 +275,11 @@
     observed or suspected information security events through appropriate
     channels in a timely manner. Reporting channels should be
     well-publicized and protect reporters from retaliation.
-  queries: []
+  queries:
+  - reporting of security incidents by employees
+  - mechanism for reporting security breaches
+  - timely reporting of security events
+  - protection of whistleblowers in security incidents
 
 - id: A.7.1
   title: Physical security perimeters
@@ -213,7 +289,11 @@
     contain information and other associated assets. Perimeter strength
     should be commensurate with the sensitivity of the assets housed
     within.
-  queries: []
+  queries:
+  - perimeter definition
+  - asset protection measures
+  - sensitive asset security
+  - physical boundary controls
 
 - id: A.7.2
   title: Physical entry
@@ -223,7 +303,11 @@
     access points. Authorised personnel, visitors, and deliveries should
     be managed through documented procedures that log and verify
     admission.
-  queries: []
+  queries:
+  - physical entry control
+  - secure area access management
+  - authorised visitor procedures
+  - admission logging requirements
 
 - id: A.7.4
   title: Physical security monitoring
@@ -233,7 +317,11 @@
     access using suitable detection, alarm, and surveillance systems.
     Monitoring arrangements must be integrated with incident response and
     recorded for review.
-  queries: []
+  queries:
+  - unauthorized access detection
+  - surveillance system implementation
+  - monitoring incident response protocols
+  - security event logging
 
 - id: A.7.10
   title: Storage media
@@ -243,7 +331,11 @@
     acquisition, use, transport, and disposal, in line with the
     organization's classification scheme. Disposal and re-use must prevent
     recovery of stored information.
-  queries: []
+  queries:
+  - storage media management
+  - physical storage lifecycle
+  - classification scheme for data storage
+  - secure disposal of media storage
 
 - id: A.8.1
   title: User end point devices
@@ -253,7 +345,11 @@
     devices should be protected through appropriate technical and
     organizational measures. Controls should cover configuration, loss or
     theft, and separation of business and personal use where relevant.
-  queries: []
+  queries:
+  - endpoint device security controls
+  - technical measures for endpoint data
+  - protection of user endpoint data
+  - configuring secure endpoint access
 
 - id: A.8.2
   title: Privileged access rights
@@ -263,7 +359,11 @@
     restricted and managed through a formal process. Privileged activity
     should be logged, reviewed, and limited to the minimum necessary for
     the role.
-  queries: []
+  queries:
+  - privileged access management
+  - role-based access control
+  - minimum necessary access
+  - formal approval process
 
 - id: A.8.3
   title: Information access restriction
@@ -273,7 +373,11 @@
     in accordance with the established access control policy. Restrictions
     must be enforced at the application, system, and data layers using a
     least-privilege approach.
-  queries: []
+  queries:
+  - least privilege access control
+  - application layer security restrictions
+  - data layer asset protection
+  - system access control policies
 
 - id: A.8.5
   title: Secure authentication
@@ -284,7 +388,11 @@
     control policy. Authentication strength should match the sensitivity
     of the asset being accessed, including the use of multi-factor
     authentication where warranted.
-  queries: []
+  queries:
+  - authentication strength matching asset sensitivity
+  - multi-factor authentication policy
+  - information access restriction guidelines
+  - secure authentication technologies implementation
 
 - id: A.8.7
   title: Protection against malware
@@ -294,7 +402,11 @@
     appropriate user awareness. Technical controls should cover detection,
     prevention, and recovery, with timely updates to keep pace with
     evolving threats.
-  queries: []
+  queries:
+  - malware protection measures
+  - user awareness for security threats
+  - technical controls for malware detection
+  - threat update policies for systems
 
 - id: A.8.8
   title: Management of technical vulnerabilities
@@ -305,7 +417,11 @@
     exposure evaluated, and appropriate measures taken to address the
     associated risks. A documented patching and remediation cadence
     should be enforced.
-  queries: []
+  queries:
+  - patching cadence
+  - technical vulnerability management
+  - risk assessment process
+  - vulnerability remediation schedule
 
 - id: A.8.13
   title: Information backup
@@ -316,7 +432,11 @@
     Backups should be protected against unauthorized access and
     environmental threats and stored with appropriate geographic
     separation.
-  queries: []
+  queries:
+  - regular backups of data
+  - protection of backed up information
+  - geographic separation of backups
+  - testing of backup systems
 
 - id: A.8.15
   title: Logging
@@ -326,7 +446,11 @@
     events should be produced, stored, protected, and analyzed. Log
     retention and integrity should support investigation and legal
     obligations.
-  queries: []
+  queries:
+  - log data storage requirements
+  - event logging policy
+  - log analysis and incident response
+  - log retention and compliance obligations
 
 - id: A.8.16
   title: Monitoring activities
@@ -336,7 +460,11 @@
     behaviour that may indicate a potential information security
     incident. Monitoring should feed alerting and response processes with
     appropriate thresholds and coverage.
-  queries: []
+  queries:
+  - Monitor networks for unusual activity
+  - Anomalous system behavior detection
+  - Incident response threshold settings
+  - System monitoring for suspicious network traffic
 
 - id: A.8.24
   title: Use of cryptography
@@ -346,4 +474,8 @@
     key management, should be defined and implemented. Cryptographic
     choices should reflect the risk context and remain current with
     accepted algorithms and key lengths.
-  queries: []
+  queries:
+  - cryptography policy
+  - risk-based key length selection
+  - current algorithm updates
+  - cryptographic key management rules
