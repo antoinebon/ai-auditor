@@ -4,9 +4,11 @@ This document describes the runtime architecture of `ai-auditor`: how a policy
 PDF becomes a gap-analysis report, what each stage does, and the design choices
 that shape the code.
 
-Scope: the **deterministic** pipeline only. The agentic retrieval path
-(`--agentic`) reuses most of this machinery but replaces one node; it will be
-documented separately.
+The pipeline has two assessment paths — **deterministic** (multi-query
+retrieval + JSON-mode structured output) and **agentic** (a bounded ReAct loop
+with tools). They share the same graph topology and the same data model,
+differing only in the per-control assessment node. Both are covered here; the
+agentic path is opt-in via `--agentic`.
 
 ---
 
@@ -113,12 +115,16 @@ A/B-test the two paths in a single invocation.
 
 ```python
 assess_node = (
-    make_agentic_assess_node(...)     # not covered here
+    make_agentic_assess_node(embedder, store, llm)
     if agentic
-    else make_assess_one_control_node(...)
+    else make_assess_one_control_node(embedder, store, llm)
 )
 builder.add_node("assess_one_control", assess_node)
 ```
+
+Both factories return a function with the same signature — LangGraph sees one
+node either way. The difference is entirely inside the node's body (Sections
+4.5, 6, and 7).
 
 ---
 
@@ -236,21 +242,40 @@ LangGraph runs these in parallel (bounded by its internal executor). Each
 branch produces one `ControlAssessment` and the state reducer concatenates
 them.
 
-### 4.5 `assess_one_control` — `graph/nodes/assessment.py`
+### 4.5 `assess_one_control` — assessment node
 
-**Purpose.** For one control: retrieve evidence, call the LLM with structured
-output, post-validate, return one `ControlAssessment`.
+Same slot in the graph, two possible implementations chosen at compile time
+(Section 2). Both take a `PerControlState` and return
+`{"assessments": [ControlAssessment]}`; both close over `(embedder, store,
+llm)` at compile time.
 
-**Inputs.** `PerControlState` (a control + the parsed doc).
-**Outputs.** `{"assessments": [ControlAssessment]}`.
+#### 4.5a Deterministic path — `graph/nodes/assessment.py`
 
-Composed of two steps, detailed in Sections 6 and 7:
+`make_assess_one_control_node(embedder, store, llm)` composes two steps:
 
-1. `retrieve_for_control(control, embedder, store)` (Section 6).
-2. `assess_control(control, hits, llm)` (Section 7).
+1. `retrieve_for_control(control, embedder, store)` — multi-query retrieval
+   with a fixed query budget (Section 6.2).
+2. `assess_control(control, hits, llm)` — one JSON-mode LLM call, then
+   `finalize_assessment` (Section 7.5).
 
-The function is built by `make_assess_one_control_node(embedder, store, llm)`,
-which closes over the three dependencies once at graph-compile time.
+Retrieval runs once; the LLM sees every hit inline in its prompt. One LLM
+call per control.
+
+#### 4.5b Agentic path — `graph/nodes/agentic_retrieval.py`
+
+`make_agentic_assess_node(embedder, store, llm, max_iterations=6)` wraps
+`run_retrieval_agent`, which runs a bounded ReAct loop with four tools
+(Section 6.3). The loop is the node — retrieval and assessment are
+interleaved rather than separated.
+
+- Up to `max_iterations` LLM calls per control (default 6).
+- The agent decides what to retrieve and when to stop; it signals completion
+  by calling the `finalize` tool.
+- On iteration-cap or missing `finalize`, the node returns a low-confidence
+  `not_covered` fallback rather than raising — the caller always gets an
+  assessment.
+- The agent's final verdict flows through the **same** `finalize_assessment`
+  helper as the deterministic path (Section 7.5).
 
 ### 4.6 `synthesize` — `graph/nodes/reporting.py`
 
@@ -362,7 +387,7 @@ classDiagram
 
 ## 6. Retrieval layer
 
-### Vector store — `src/ai_auditor/vector_store.py`
+### 6.1 Vector store — `src/ai_auditor/vector_store.py`
 
 A thin wrapper over ChromaDB's `EphemeralClient`. One run creates one
 collection (`policy_chunks`, cosine space) and disposes of it on exit.
@@ -389,7 +414,7 @@ sequenceDiagram
 decided — swap `EphemeralClient()` for `PersistentClient(path=...)` to make
 collections survive runs.
 
-### Deterministic multi-query retrieval — `graph/nodes/retrieval.py`
+### 6.2 Deterministic multi-query retrieval — `graph/nodes/retrieval.py`
 
 For each control, `retrieve_for_control` runs several query phrasings and
 merges the hits:
@@ -420,11 +445,109 @@ with the highest similarity and drop the rest. We lose the signal that
 "multiple queries agreed this is relevant"; in exchange the prompt stays
 short.
 
+### 6.3 Agentic retrieval — `graph/nodes/agentic_retrieval.py`
+
+In the agentic path, retrieval and assessment are not two separate steps —
+they are the same bounded ReAct loop. The LLM decides which queries to run,
+whether to read full sections, and when to stop. Retrieval history
+accumulates in a mutable per-run state object the tools read and write.
+
+#### Tools
+
+Four `StructuredTool`s are bound to the model via `llm.bind_tools([...])`.
+Their argument schemas are Pydantic classes so the model receives a strict
+function-calling schema.
+
+| Tool             | Purpose                                                                   |
+| ---------------- | ------------------------------------------------------------------------- |
+| `list_sections`  | Return the document's table of contents (section id, heading, pages).     |
+| `search_policy`  | Semantic search — returns top-k chunk ids with text previews.             |
+| `read_section`   | Return one section's full text verbatim, given a `section_id`.            |
+| `finalize`       | Record the coverage judgment and terminate the loop.                      |
+
+`search_policy` embeds the query on the fly (single query, not multi-query),
+queries the same ChromaDB collection the deterministic path uses, and
+appends every returned `QueryHit` into `state.seen_hits`. This accumulator
+is what eventually backs the `EvidenceSpan` list in the final assessment —
+the agent can only cite chunks it actually retrieved.
+
+#### The loop
+
+```mermaid
+stateDiagram-v2
+    [*] --> CallLLM
+    CallLLM --> ParseResponse: AIMessage
+    ParseResponse --> NoToolCall: no tool_calls
+    ParseResponse --> DispatchTools: tool_calls present
+
+    DispatchTools --> Finalize: name == "finalize"
+    DispatchTools --> RunTool: other tools
+    RunTool --> AppendToolMessage
+    AppendToolMessage --> CheckCap
+
+    CheckCap --> CallLLM: iteration < max_iterations
+    CheckCap --> CapReached: iteration >= max_iterations
+
+    Finalize --> BuildAssessment
+    NoToolCall --> BuildAssessment: uses state.pending_finalize if set
+    CapReached --> BuildAssessment: fallback path
+    BuildAssessment --> [*]
+```
+
+Step by step (`run_retrieval_agent`, `agentic_retrieval.py:94`):
+
+1. Seed the conversation with the agent system prompt
+   (`src/ai_auditor/prompts/retrieval_agent.md`) and a user message
+   identifying the control.
+2. For up to `max_iterations` (default 6): invoke `llm_with_tools`, append
+   the response, dispatch any tool calls, and append a `ToolMessage` for
+   each result.
+3. A tool call named `finalize` is intercepted in the outer loop — its args
+   are stashed in `state.pending_finalize` and the loop breaks without
+   running `finalize` as a real tool.
+4. If the model returns text with no tool calls, the loop ends early.
+5. After the loop, `_build_assessment` turns the agent's state into a
+   `ControlAssessment`.
+
+#### Termination paths
+
+| Condition                                             | Result                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| Agent called `finalize`                               | Normal path — verdict and cited ids go through `finalize_assessment`.  |
+| Agent answered without tool calls before finalising   | Fallback `not_covered` with low confidence.                            |
+| `max_iterations` reached with no `finalize`           | Same fallback; an `[meta]` note is appended to `reasoning`.            |
+| Agent called `finalize` but with unknown coverage/confidence strings | Coerced via `_coerce_coverage` / `_coerce_confidence`, defaulting to `not_covered` / `low`. |
+
+The loop never raises to the caller. Every control always gets a
+`ControlAssessment`; the confidence and `reasoning` field make degraded
+outputs auditable.
+
+#### Agent-specific rules
+
+- **`MIN_SEARCHES_BEFORE_NOT_COVERED = 2`.** If the agent finalises
+  `not_covered` after fewer than two `search_policy` calls, confidence is
+  forced to `low` — it didn't look hard enough to be confident. This rule
+  doesn't exist on the deterministic path (which has a fixed query budget).
+- **Fabricated citations are dropped** by the shared `finalize_assessment`
+  (Section 7.5), not by the agent loop. The agent's `seen_hits` keyset is
+  passed in as `valid_chunk_ids`.
+
+#### Trade-offs vs deterministic
+
+| Axis           | Deterministic                      | Agentic                                      |
+| -------------- | ---------------------------------- | -------------------------------------------- |
+| LLM calls      | 1 per control (+1 retry on failure)| Up to `max_iterations` per control           |
+| Retrieval      | Fixed: pre-authored multi-query    | Agent chooses queries; can `read_section`    |
+| Latency        | Low, predictable                   | Higher, variable                             |
+| Cost           | Low                                | Higher (more tokens, more round-trips)       |
+| Failure mode   | Raises on double-validation error  | Never raises — degraded assessment instead   |
+| Best for       | Baseline runs, CI, eval grids      | Hard controls where fixed queries miss       |
+
 ---
 
 ## 7. Assessment layer
 
-### Per-control flow
+### 7.1 Deterministic per-control flow
 
 ```mermaid
 sequenceDiagram
@@ -444,47 +567,100 @@ sequenceDiagram
     F-->>N: ControlAssessment (validated)
 ```
 
-### The prompt
+### 7.2 Agentic per-control flow
 
-The system prompt is `src/ai_auditor/prompts/assessment.md` (loaded at import
-time). The user prompt, built by `_render_user_prompt`, contains:
+```mermaid
+sequenceDiagram
+    participant N as assess_one_control<br/>(agentic)
+    participant A as run_retrieval_agent
+    participant L as LLM (tool-calling)
+    participant T as tools<br/>(search/read/list)
+    participant S as VectorStore
+    participant F as finalize_assessment
 
-- Control identity (id, title, theme, description).
-- Each retrieved chunk inline, tagged with its `chunk_id`, section heading,
-  page range, and similarity.
-- A footer reminding the LLM to cite only `chunk_id`s that appear above.
+    N->>A: (control, parsed, embedder, store, llm)
+    loop up to max_iterations
+        A->>L: messages + tool schemas
+        L-->>A: AIMessage with tool_calls
+        alt tool is finalize
+            A->>A: stash FinalizeArgs; break
+        else other tools
+            A->>T: dispatch
+            T->>S: query / read sections
+            S-->>T: hits / section text
+            T-->>A: ToolMessage
+        end
+    end
+    A->>A: _build_assessment<br/>(coerce types, enforce min-searches)
+    A->>F: finalize(control_id, coverage,<br/>evidence_spans, valid_chunk_ids=seen_hits)
+    F-->>A: ControlAssessment (validated)
+    A-->>N: ControlAssessment
+```
 
-If retrieval returned no hits, the prompt short-circuits the model toward
-`not_covered`.
+Same shape at the boundary as the deterministic flow: one `ControlAssessment`
+out, every citation validated against real retrieved chunks. The loop body
+differs; the contract with the rest of the graph does not.
 
-### Structured output — `call_json` in `llm.py`
+### 7.3 Prompts
 
-`call_json(llm, system, user, schema=ControlAssessment)` does three things:
+Two system prompts, loaded at import time via `importlib.resources`:
 
-1. Invoke the LLM (already configured with `format="json"` for Ollama).
-2. `schema.model_validate_json(raw)` — on success, return.
-3. On `ValidationError`, re-invoke once with the error quoted back to the
-   model and ask it to fix its response. A second failure raises.
+- `src/ai_auditor/prompts/assessment.md` — deterministic path. The user
+  prompt, built by `_render_user_prompt`, contains control identity, each
+  retrieved chunk inline (tagged with `chunk_id`, section heading, page
+  range, similarity), and a footer reminding the model to cite only those
+  `chunk_id`s. If retrieval returned no hits, the prompt short-circuits the
+  model toward `not_covered`.
+- `src/ai_auditor/prompts/retrieval_agent.md` — agentic path. The user
+  prompt is just the control identity plus "investigate the policy using
+  your tools, then call `finalize`". The model discovers evidence on its
+  own.
 
-One retry is enough for small local models that occasionally append prose or
-drop a key; bigger retry loops rarely help and burn tokens.
+### 7.4 Structured output
 
-### Post-validation — `finalize_assessment`
+The two paths use different structured-output mechanisms, both anchored in
+Pydantic schemas:
 
-The LLM's output is not trusted verbatim. `finalize_assessment` applies two
-protections:
+- **Deterministic — `call_json` in `llm.py`.** Invoke the LLM (configured
+  with `format="json"`), parse with `ControlAssessment.model_validate_json`,
+  and on `ValidationError` re-invoke once with the error quoted back. A
+  second failure raises. One retry is enough for small local models that
+  occasionally append prose or drop a key.
+- **Agentic — `llm.bind_tools(...)`.** The four tool schemas
+  (`SearchPolicyArgs`, `ReadSectionArgs`, `ListSectionsArgs`, `FinalizeArgs`)
+  are Pydantic `BaseModel`s. LangChain exposes them to the model as a
+  function-calling schema and LangGraph's provider layer does the coercion.
+  The `finalize` tool args are what eventually become the assessment verdict.
 
-1. **Drop fabricated citations.** Any `EvidenceSpan.chunk_id` that was not in
-   the retrieved hit set is dropped. The model doesn't get to invent
-   references to chunks it never saw.
-2. **Coerce unsupported verdicts.** If coverage is `covered` or `partial` but
-   no citations survive, coverage is forced to `not_covered` and confidence
-   to `low`. A `[post-validation]` note is appended to `reasoning` so the
-   downgrade is auditable.
+### 7.5 Post-validation — `finalize_assessment`
 
-This is the single enforcement point for "evidence must be real and must
-support the verdict". The agentic retrieval path reuses the same helper — one
-truth about what makes an assessment defensible.
+Both paths funnel through the same helper in
+`src/ai_auditor/graph/nodes/assessment.py`. Two protections apply:
+
+1. **Drop fabricated citations.** Any `EvidenceSpan.chunk_id` not in the
+   retrieved hit set is dropped. The model doesn't get to invent references
+   to chunks it never saw.
+2. **Coerce unsupported verdicts.** If coverage is `covered` or `partial`
+   but no citations survive, coverage is forced to `not_covered` and
+   confidence to `low`. A `[post-validation]` note is appended to
+   `reasoning` so the downgrade is auditable.
+
+The `valid_chunk_ids` set differs per path: deterministic uses the set of
+retrieved hits for that control; agentic uses `state.seen_hits` — the union
+of every chunk the agent retrieved via `search_policy`.
+
+The agentic path layers two extra rules on top, in `_build_assessment`:
+
+3. **`MIN_SEARCHES_BEFORE_NOT_COVERED`.** A `not_covered` verdict after
+   fewer than 2 `search_policy` calls is kept, but confidence is forced to
+   `low`. Not enough looking to be confident.
+4. **`[meta]` iteration-cap note.** When the agent hit `max_iterations`
+   before calling `finalize`, the reasoning field gets an appended note so
+   consumers can distinguish "clean completion" from "loop ran out".
+
+`finalize_assessment` is the single enforcement point for "evidence must be
+real and must support the verdict". Both paths share it — one truth about
+what makes an assessment defensible.
 
 ---
 
@@ -496,17 +672,28 @@ One function, `make_llm(settings, *, json_mode, temperature)`, returns a
 `BaseChatModel`. Today the body constructs a `ChatOllama`; the return type is
 the provider-neutral LangChain interface so callers don't depend on Ollama.
 Swapping providers means replacing the body — everything else in the pipeline
-talks to `BaseChatModel.invoke` and nothing more.
+talks to `BaseChatModel.invoke` (+ `bind_tools` for the agentic path) and
+nothing more.
 
-`json_mode=True` maps to Ollama's `format="json"`. Equivalents for other
-providers (`response_format={"type": "json_object"}` for OpenAI, etc.) would
-be added here.
+`compile_graph` picks the mode per path:
+
+```python
+resolved_llm = make_llm(settings, json_mode=not agentic)
+```
+
+- Deterministic → `json_mode=True` → Ollama's `format="json"`. Equivalents
+  for other providers (`response_format={"type": "json_object"}` for OpenAI,
+  etc.) would be added in `make_llm`.
+- Agentic → `json_mode=False`. The agent calls `llm.bind_tools([...])` on
+  the result to attach tool schemas; JSON-mode and tool-calling are
+  mutually exclusive at the Ollama layer.
 
 ### Prompts as files — `src/ai_auditor/prompts/`
 
 - `assessment.md` — system prompt for the deterministic assessment node.
 - `query_generation.md` — used offline to pre-generate `control.queries`.
-- `retrieval_agent.md` — agentic path only, out of scope for this doc.
+- `retrieval_agent.md` — system prompt for the agentic path; instructs the
+  model on the available tools and the expected workflow.
 
 Prompts are loaded at import time via `importlib.resources` and are shipped
 inside the package.
@@ -603,6 +790,14 @@ The pipeline is instrumented in two complementary ways:
   a span; manual `@mlflow.trace` decorators wrap higher-level phases. A
   session-level parent run holds per-document/per-strategy child runs.
 
+The agentic path adds one extra hook: `@mlflow.trace(name="retrieval_agent")`
+on `run_retrieval_agent` creates a parent span per control, tagged with
+`control_id` and `control_title`. Each LLM call and tool invocation inside
+the loop shows up as a nested span under that parent — so an operator can
+open the trace for one control and read exactly which queries the agent
+tried and in which order. The deterministic path has no equivalent wrapper:
+a single LLM call per control doesn't need one.
+
 Both are optional. When MLflow is disabled, tracing is a no-op; the pipeline
 doesn't change shape.
 
@@ -643,6 +838,20 @@ cross-document analysis, "what changed since last run" diffing.
 **Why.** The graph stays simple; one run is reproducible end-to-end.
 **Cost.** No A/B testing within a run. The eval script runs both paths as
 separate invocations instead.
+
+### Bounded agent loop (`max_iterations=6`)
+
+**Choice.** The ReAct loop has a hard iteration cap and a `finalize`-or-
+fallback termination rule. Exceeding the cap never raises; it produces a
+low-confidence `not_covered` with an `[meta]` note.
+**Why.** Predictable cost and latency per control — critical when you're
+running 33 controls in parallel against a local model. A runaway loop on
+one control shouldn't stall the whole run.
+**Cost.** Hard controls that would benefit from a seventh round of search
+get capped. The fallback is auditable (confidence=low, `[meta]` note), but
+it is a degraded answer.
+**Where to change it.** `agentic_retrieval.py::MAX_ITERATIONS_DEFAULT` or
+the `max_iterations` kwarg on `make_agentic_assess_node`.
 
 ### Multi-query retrieval + dedupe-by-best
 
@@ -700,6 +909,14 @@ to `compile_graph`). The model is loaded lazily on first `encode` call.
 Replace the body of `llm.py::make_llm` to return a different
 `BaseChatModel`. Map `json_mode=True` to the provider's structured-output
 convention (e.g. `response_format={"type": "json_object"}` for OpenAI).
+
+**Add a new agentic tool.**
+Define a Pydantic args schema (e.g. `class MyToolArgs(BaseModel): ...`),
+add a function that reads/writes `_AgentState`, wrap it with
+`StructuredTool.from_function(...)`, and append it to the list returned by
+`_build_tools`. The agent's system prompt in
+`src/ai_auditor/prompts/retrieval_agent.md` should also mention the tool or
+the model won't know to use it.
 
 **Persist the vector store across runs.**
 Edit `vector_store.py::_make_client` to return
