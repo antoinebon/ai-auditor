@@ -301,25 +301,6 @@ separate sessions instead.
 
 ### Deterministic per-control flow
 
-```mermaid
-sequenceDiagram
-    participant N as assess_one_control
-    participant R as retrieve_for_control
-    participant P as _render_user_prompt
-    participant L as LLM (JSON mode)
-    participant F as finalize_assessment
-
-    N->>R: (control, embedder, store)
-    R-->>N: hits: list[QueryHit]
-    Note over R: §4.2 multi-query + section-dedupe
-    N->>P: (control, hits)
-    P-->>N: user prompt with section_ids inline
-    N->>L: call_json(system, user, ControlAssessment)
-    L-->>N: ControlAssessment (raw)
-    N->>F: finalize(control_id, coverage, evidence,<br/>valid_section_ids)
-    F-->>N: ControlAssessment (validated)
-```
-
 1. `retrieve_for_control` runs the multi-query retrieval from §4.2
    and returns up to `final_k=10` hits.
 2. `_render_user_prompt` inlines every hit verbatim (tagged with
@@ -429,35 +410,17 @@ path.
 
 ### Per-control flow
 
-```mermaid
-sequenceDiagram
-    participant N as assess_one_control<br/>(agentic)
-    participant W as run_retrieval_agent
-    participant G as subgraph
-    participant AG as agent
-    participant TL as tools
-    participant FN as finalize
-    participant FA as finalize_assessment
-
-    N->>W: (control, parsed, embedder, store, llm_tools, llm_json)
-    W->>W: build _AgentRun + tools (closures)
-    W->>G: invoke(messages, recursion_limit)
-    loop until plain-text reply
-        G->>AG: state["messages"]
-        AG-->>G: AIMessage (+ tool_calls)
-        alt has tool_calls
-            G->>TL: dispatch
-            TL-->>G: ToolMessages
-        else plain text
-            G->>FN: transcript
-            FN-->>G: AssessmentResponse
-        end
-    end
-    G-->>W: state with structured_response
-    W->>FA: finalize(control_id, coverage,<br/>evidence_spans, valid_section_ids=run.seen_sections)
-    FA-->>W: ControlAssessment (validated)
-    W-->>N: ControlAssessment
-```
+`run_retrieval_agent` builds a fresh `_AgentRun` plus the three
+investigation tools (closing over `run`), compiles the subgraph,
+and invokes it with an initial `messages` list (system prompt +
+control prompt) and a `recursion_limit` derived from
+`max_iterations`. The subgraph runs `agent → tools → agent → …`
+until the agent emits plain text, at which point the conditional
+edge routes to `finalize`, which writes the `AssessmentResponse`
+and ends. The outer wrapper then hands the response plus
+`run.seen_sections` to the shared `finalize_assessment` for
+citation validation, and returns a `ControlAssessment` to the
+caller — the same return type as the deterministic node.
 
 ### Termination, iteration cap, fallback
 
