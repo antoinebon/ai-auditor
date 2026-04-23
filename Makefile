@@ -3,7 +3,8 @@
         mlflow-ui \
         run-min run-real run-sans run-agentic \
         run-min-docker \
-        eval eval-full
+        eval eval-full \
+        generate-queries
 
 sync:
 	uv sync --extra dev
@@ -78,3 +79,11 @@ eval:
 # Full 33-control corpus across all three sample PDFs.
 eval-full:
 	uv run python scripts/run_eval.py
+
+# --- One-off: populate Control.queries via LLM ---------------------
+
+# Generate 3-5 short retrieval-oriented paraphrases for each control
+# whose `queries` is empty, and write them back to the YAML. Pass
+# --force to regenerate controls that already have queries populated.
+generate-queries:
+	uv run python scripts/generate_queries.py
