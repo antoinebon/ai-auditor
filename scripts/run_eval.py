@@ -1,27 +1,25 @@
 """Run both graph strategies on a set of policy PDFs and compare them.
 
-Produces ``out-eval/metrics.json`` + ``out-eval/report.md`` plus one
-subdirectory per (doc, strategy) holding the individual run's JSON +
-Markdown report. Logs the full session to MLflow under experiment
-``ai-auditor`` unless ``--no-mlflow`` is passed.
+Logs the full session to MLflow under experiment ``ai-auditor``: a parent
+run with aggregate metrics + ``metrics.json`` / ``report.md`` artefacts,
+and one nested child per ``(doc, strategy)`` with per-invocation metrics
++ the individual run's report. No local files are written.
 
 Usage::
 
     uv run python scripts/run_eval.py \
         --docs data/examples/minimal_policy.pdf \
                data/examples/sans_acceptable_use.pdf \
-               data/examples/northwestern_infosec_policy.pdf \
-        --output out-eval/
+               data/examples/northwestern_infosec_policy.pdf
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -36,7 +34,6 @@ from ai_auditor.evaluation.metrics import (
 )
 from ai_auditor.evaluation.mlflow_logger import log_session
 from ai_auditor.evaluation.runner import StrategyRun, run_strategy
-from ai_auditor.render import write_outputs
 from ai_auditor.tracing import init_tracing
 
 app = typer.Typer(
@@ -64,10 +61,6 @@ def main(
         Path("data/examples/sans_acceptable_use.pdf"),
         Path("data/examples/northwestern_infosec_policy.pdf"),
     ],
-    output: Annotated[
-        Path,
-        typer.Option("--output", "-o", help="Where to write metrics.json + report.md."),
-    ] = Path("out-eval"),
     controls: Annotated[
         Path | None,
         typer.Option(
@@ -75,24 +68,23 @@ def main(
             help="Override the control corpus (e.g. iso27001_annex_a_small.yaml).",
         ),
     ] = None,
-    mlflow_enabled: Annotated[
-        bool,
-        typer.Option("--mlflow/--no-mlflow", help="Log the session to MLflow."),
-    ] = True,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
-    """Run both strategies on each doc, compute comparison metrics, write artefacts."""
+    """Run both strategies on each doc, compute comparison metrics, log to MLflow."""
     _configure_logging(verbose)
     settings = load_settings()
     if controls is not None:
         settings = settings.model_copy(update={"controls_path": controls})
 
-    init_tracing(settings, enabled=mlflow_enabled)
-    output.mkdir(parents=True, exist_ok=True)
+    init_tracing(settings, enabled=True)
 
-    console.print(f"[bold]Eval session[/bold]  docs={len(docs)}  mlflow={mlflow_enabled}")
+    console.print(f"[bold]Eval session[/bold]  docs={len(docs)}")
     console.print(f"  model={settings.ollama_model} @ {settings.ollama_host}")
     console.print(f"  controls={settings.controls_path}")
+    console.print(
+        f"  mlflow={settings.mlflow_tracking_uri or './mlruns'}  "
+        f"experiment={settings.mlflow_experiment}"
+    )
 
     runs: list[StrategyRun] = []
     comparisons: list[DocComparison] = []
@@ -100,10 +92,8 @@ def main(
     for doc in docs:
         console.print(f"\n[bold cyan]▶[/bold cyan] {doc.name}")
         det = run_strategy(doc, agentic=False, settings=settings)
-        _write_per_run(det, output)
         console.print(f"  deterministic: {det.wall_time_s:5.1f}s  llm={det.n_llm_calls}")
         agt = run_strategy(doc, agentic=True, settings=settings)
-        _write_per_run(agt, output)
         console.print(
             f"  agentic:       {agt.wall_time_s:5.1f}s  llm={agt.n_llm_calls}  "
             f"tools={sum(agt.n_tool_calls.values())}"
@@ -112,41 +102,34 @@ def main(
         comparisons.append(compare_docs(det.report, agt.report))
 
     agg = aggregate(comparisons)
-    _write_metrics_json(output, runs, comparisons, agg, settings)
-    _write_markdown_report(output, runs, comparisons, agg, settings)
+    metrics_payload = _build_metrics_payload(runs, comparisons, agg, settings)
+    markdown_report = _build_markdown_report(runs, comparisons, agg, settings)
     _print_summary(comparisons, runs)
 
-    log_session(
+    run_id = log_session(
         runs=runs,
         comparisons=comparisons,
         aggregate=agg,
         settings=settings,
-        output_dir=output,
-        enabled=mlflow_enabled,
+        metrics_payload=metrics_payload,
+        markdown_report=markdown_report,
     )
 
-    console.print(f"\n[green]wrote[/green] {output / 'metrics.json'}")
-    console.print(f"[green]wrote[/green] {output / 'report.md'}")
+    console.print(f"\n[green]logged MLflow run[/green] {run_id}")
 
 
 # ---------------------------------------------------------------------------
-# Output writers
+# Content builders — produce the JSON/Markdown the logger uploads.
 # ---------------------------------------------------------------------------
 
 
-def _write_per_run(run: StrategyRun, output: Path) -> None:
-    per_run_dir = output / run.doc_path.stem / run.strategy
-    write_outputs(run.report, per_run_dir)
-
-
-def _write_metrics_json(
-    output: Path,
+def _build_metrics_payload(
     runs: Iterable[StrategyRun],
     comparisons: Iterable[DocComparison],
     agg: AggregateMetrics,
     settings: Settings,
-) -> None:
-    payload = {
+) -> dict[str, Any]:
+    return {
         "session": {
             "timestamp": datetime.now(UTC).isoformat(),
             "model": settings.ollama_model,
@@ -182,16 +165,14 @@ def _write_metrics_json(
             for r in runs
         ],
     }
-    (output / "metrics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _write_markdown_report(
-    output: Path,
+def _build_markdown_report(
     runs: Iterable[StrategyRun],
     comparisons: Iterable[DocComparison],
     agg: AggregateMetrics,
     settings: Settings,
-) -> None:
+) -> str:
     runs_list = list(runs)
     comparisons_list = list(comparisons)
     lines: list[str] = []
@@ -250,7 +231,12 @@ def _write_markdown_report(
             f"| {r.doc_path.name} | {r.strategy} | {r.wall_time_s:.1f} | "
             f"{r.n_llm_calls} | {sum(r.n_tool_calls.values())} |"
         )
-    (output / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Terminal output
+# ---------------------------------------------------------------------------
 
 
 def _print_summary(comparisons: list[DocComparison], runs: list[StrategyRun]) -> None:

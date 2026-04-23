@@ -239,9 +239,11 @@ Metrics captured:
 - **Performance**: wall-time, LLM call count, tool-call count per
   `(doc, strategy)` pair.
 
-Artefacts: `out-eval/metrics.json`, `out-eval/report.md`, plus one
-`<doc_stem>/<strategy>/report.{json,md}` per run. Same artefacts land
-as MLflow run artefacts when the logger is enabled.
+Artefacts land in MLflow only — no local `out-eval/` directory. The
+parent run carries `metrics.json` + `report.md`; each nested
+`(doc, strategy)` child run carries that run's `report.json` +
+`report.md`. View them with `make mlflow-ui` (or the compose UI at
+`http://localhost:5000`).
 
 No ground-truth labels are used — this is comparative + performance
 evaluation only. Absolute verdict quality would need expert-annotated

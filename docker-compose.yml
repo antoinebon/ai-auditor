@@ -77,7 +77,6 @@ services:
     volumes:
       - ./data:/app/data
       - ./out:/app/out
-      - ./out-eval:/app/out-eval
     # No default command — invoke with e.g.:
     #   docker compose run --rm ai-auditor analyze /app/data/examples/minimal_policy.pdf --agentic
 

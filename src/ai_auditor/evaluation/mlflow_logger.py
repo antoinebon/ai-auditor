@@ -1,14 +1,16 @@
 """MLflow experiment logging for the eval harness.
 
 Single parent run per session with one nested child per
-``(doc, strategy)``. The parent carries aggregate metrics + artefacts;
-children carry per-invocation metrics. Autolog traces produced during
-the invocations are stored separately in MLflow's trace store — the
-nested runs and the traces share the same experiment so the UI lets
-you pivot between them.
+``(doc, strategy)``. The parent carries aggregate metrics + the session
+report; children carry per-invocation metrics + the individual run's
+report. Autolog traces produced during the invocations are stored
+separately in MLflow's trace store — the nested runs and the traces
+share the same experiment so the UI lets you pivot between them.
 
-Everything here is a no-op when ``enabled=False`` so the eval CLI can
-run offline (``--no-mlflow``) and produce identical local artefacts.
+Eval is MLflow-only: there is no local ``out-eval/`` mirror. If MLflow
+is misconfigured, eval fails — point ``MLFLOW_TRACKING_URI`` at a
+reachable server (or leave it empty for the local ``./mlruns`` file
+store).
 """
 
 from __future__ import annotations
@@ -16,13 +18,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import Any
 
 import mlflow
 
 from ai_auditor.config import Settings
 from ai_auditor.evaluation.metrics import AggregateMetrics, DocComparison
 from ai_auditor.evaluation.runner import StrategyRun
+from ai_auditor.render import render_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +36,13 @@ def log_session(
     comparisons: Iterable[DocComparison],
     aggregate: AggregateMetrics,
     settings: Settings,
-    output_dir: Path,
-    enabled: bool = True,
-) -> None:
-    """Log an eval session as a parent MLflow run with nested children."""
-    if not enabled:
-        logger.debug("MLflow eval logging disabled")
-        return
+    metrics_payload: dict[str, Any],
+    markdown_report: str,
+) -> str:
+    """Log an eval session as a parent MLflow run with nested children.
 
+    Returns the parent run id so the caller can print / test against it.
+    """
     if settings.mlflow_tracking_uri:
         mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     mlflow.set_experiment(settings.mlflow_experiment)
@@ -49,7 +51,7 @@ def log_session(
     runs_list = list(runs)
     comparisons_list = list(comparisons)
 
-    with mlflow.start_run(run_name=f"eval-session-{ts}"):
+    with mlflow.start_run(run_name=f"eval-session-{ts}") as parent:
         mlflow.log_params(
             {
                 "ollama_model": settings.ollama_model,
@@ -66,10 +68,8 @@ def log_session(
                 **_per_strategy_totals(runs_list),
             }
         )
-        for artefact in ("metrics.json", "report.md"):
-            path = output_dir / artefact
-            if path.exists():
-                mlflow.log_artifact(str(path))
+        mlflow.log_dict(metrics_payload, "metrics.json")
+        mlflow.log_text(markdown_report, "report.md")
 
         for cmp in comparisons_list:
             mlflow.log_metric(f"agreement_pct.{cmp.doc_path.stem}", cmp.agreement_pct)
@@ -77,6 +77,8 @@ def log_session(
 
         for run in runs_list:
             _log_nested(run)
+
+        return str(parent.info.run_id)
 
 
 def _log_nested(run: StrategyRun) -> None:
@@ -93,6 +95,7 @@ def _log_nested(run: StrategyRun) -> None:
         for tool, count in run.n_tool_calls.items():
             mlflow.log_metric(f"tool_calls.{tool}", count)
         mlflow.log_dict(run.report.model_dump(mode="json"), "report.json")
+        mlflow.log_text(render_markdown(run.report), "report.md")
 
 
 def _per_strategy_totals(runs: list[StrategyRun]) -> dict[str, float]:
