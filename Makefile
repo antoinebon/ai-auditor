@@ -1,8 +1,8 @@
 .PHONY: sync fmt lint typecheck test check \
-        docker-build compose-up compose-down \
+        docker-build compose-up compose-down compose-pull-model \
         mlflow-ui \
-        run-min run-real run-sans run-agentic \
-        run-min-docker \
+        run-min run-real run-agentic \
+        docker-run-min docker-run-real docker-run-agentic \
         eval eval-full \
         generate-queries
 
@@ -56,18 +56,25 @@ run-min:
 run-real:
 	uv run ai-auditor analyze data/examples/northwestern_infosec_policy.pdf
 
-run-sans:
-	uv run ai-auditor analyze data/examples/sans_acceptable_use.pdf
-
 run-agentic:
 	uv run ai-auditor analyze data/examples/sans_acceptable_use.pdf --agentic
 
-# Analyse the minimal sample PDF via docker compose. Infra (MLflow +
-# Ollama + model pull) is brought up automatically via depends_on; on
-# first run expect a multi-minute wait while the model is pulled into
-# the ollama_data volume.
-run-min-docker:
+# --- One-off analyze runs via docker compose -------------------------
+#
+# Same three sample PDFs, run inside the `ai-auditor` service. Infra
+# (MLflow + Ollama + model pull) is brought up automatically via
+# depends_on; on first run expect a multi-minute wait while the model
+# is pulled into the ollama_data volume. Reports are written to ./out
+# on the host via the volume mount.
+
+docker-run-min:
 	docker compose run --rm ai-auditor analyze /app/data/examples/minimal_policy.pdf
+
+docker-run-real:
+	docker compose run --rm ai-auditor analyze /app/data/examples/northwestern_infosec_policy.pdf
+
+docker-run-agentic:
+	docker compose run --rm ai-auditor analyze /app/data/examples/sans_acceptable_use.pdf --agentic
 
 # --- Strategy evaluation --------------------------------------------
 
