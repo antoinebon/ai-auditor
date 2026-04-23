@@ -34,7 +34,7 @@ docker-build:
 # ollama-pull sidecar downloads the model (~4 GB for qwen2.5:7b-instruct);
 # follow progress with `docker compose logs -f ollama-pull`.
 compose-up:
-	docker compose up -d mlflow ollama ollama-pull
+	docker compose up -d ollama ollama-pull
 
 compose-down:
 	docker compose down

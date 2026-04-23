@@ -65,14 +65,11 @@ services:
       dockerfile: Dockerfile
     container_name: ai-auditor
     depends_on:
-      mlflow:
-        condition: service_healthy
       ollama-pull:
         condition: service_completed_successfully
     environment:
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b-instruct}
-      MLFLOW_TRACKING_URI: http://mlflow:5000
       MLFLOW_EXPERIMENT: ai-auditor
     volumes:
       - ./data:/app/data
