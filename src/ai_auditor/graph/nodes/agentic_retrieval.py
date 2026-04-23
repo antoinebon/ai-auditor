@@ -330,17 +330,16 @@ def _build_tools(
         ]
         return json.dumps({"sections": payload}, ensure_ascii=False)
 
+    # search_policy first — tool-calling models weight the first entry as
+    # the default choice, and searching is the primary investigation path.
     return [
-        StructuredTool.from_function(
-            func=list_sections,
-            name="list_sections",
-            description="List section IDs, headings, and page ranges of the policy document.",
-            args_schema=ListSectionsArgs,
-        ),
         StructuredTool.from_function(
             func=search_policy,
             name="search_policy",
-            description="Semantic search over policy chunks. Returns section ids + text previews.",
+            description=(
+                "Primary tool. Semantic search over policy chunks. Returns "
+                "section ids + text previews. Call at least once."
+            ),
             args_schema=SearchPolicyArgs,
         ),
         StructuredTool.from_function(
@@ -348,6 +347,16 @@ def _build_tools(
             name="read_section",
             description="Read one section's full text given its section_id.",
             args_schema=ReadSectionArgs,
+        ),
+        StructuredTool.from_function(
+            func=list_sections,
+            name="list_sections",
+            description=(
+                "Optional. Shows section IDs and headings. Only use if "
+                "search_policy results are confusing; do not use as a "
+                "substitute for searching."
+            ),
+            args_schema=ListSectionsArgs,
         ),
     ]
 
