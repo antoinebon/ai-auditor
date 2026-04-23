@@ -30,9 +30,12 @@ pair:
   at chance level, negative = worse than chance. Implemented without
   scikit-learn in `evaluation/metrics.py` — the math is textbook.
 - **Evidence Jaccard.** For the controls where *coverage* matches, how
-  much do the cited `chunk_id` sets overlap. Reported as a mean across
+  much do the cited `section_id` sets overlap. Reported as a mean across
   matched controls. Catches the case where both paths say "covered" but
-  point at different parts of the policy.
+  point at different parts of the policy. Section-level granularity
+  means two paths that cite different chunks inside the same section
+  now count as agreement — closer to semantic agreement than the old
+  chunk-level Jaccard.
 
 The disagreement matrix (counts of each `(deterministic, agentic)`
 coverage pair where they differ) tells you *how* they disagree — e.g.

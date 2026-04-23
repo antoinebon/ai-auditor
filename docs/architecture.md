@@ -335,9 +335,14 @@ classDiagram
         +list~float~ embedding
     }
     class EvidenceSpan {
-        +str chunk_id
-        +str quote
+        +str section_id
         +str relevance_note
+    }
+    class SectionRef {
+        +str id
+        +str heading
+        +int page_start
+        +int page_end
     }
     class ControlAssessment {
         +str control_id
@@ -362,14 +367,17 @@ classDiagram
         +list~ControlAssessment~ assessments
         +str summary
         +ReportStats stats
+        +list~SectionRef~ sections
     }
 
     ParsedDocument "1" --> "*" Section
     Section ..> PolicyChunk : chunked into
+    Section ..> SectionRef : trimmed into
     PolicyChunk "1" --> "1" EmbeddedChunk
-    EvidenceSpan ..> PolicyChunk : chunk_id references
+    EvidenceSpan ..> SectionRef : section_id references
     ControlAssessment "1" --> "*" EvidenceSpan
     Report "1" --> "*" ControlAssessment
+    Report "1" --> "*" SectionRef
     Report "1" --> "1" ReportStats
     Control ..> ControlAssessment : assessed as
 ```
@@ -377,8 +385,11 @@ classDiagram
 ### Invariants the code depends on
 
 - `Control` is `frozen=True` — the same instance is shared across branches.
-- `EvidenceSpan.chunk_id` **must** reference a chunk actually retrieved for
-  that control; the assessment finalizer enforces this (Section 7).
+- `EvidenceSpan.section_id` **must** reference a section actually touched
+  during assessment — retrieved by `search_policy` or opened via
+  `read_section`; the assessment finalizer enforces this (Section 7).
+  The rendered report looks up display info (heading, pages) from
+  `Report.sections`.
 - `ControlAssessment.coverage == "not_covered"` implies `evidence == []`.
 - `ControlAssessment.coverage in {"covered", "partial"}` implies at least one
   surviving `EvidenceSpan`.
@@ -427,7 +438,7 @@ flowchart TD
     QS --> E[Embedder.encode queries]
     QF --> E
     E --> V[VectorStore.query<br/>top_k=per_query_k per query]
-    V --> D[dedupe by chunk_id<br/>keep best similarity]
+    V --> D[dedupe by section_id<br/>keep best similarity]
     D --> S[sort by similarity desc]
     S --> T[take top final_k]
     T --> H[list of QueryHit]
@@ -440,10 +451,14 @@ right phrasing in a policy document — the vocabulary gap between
 "Information security in project management" and a policy section titled
 "Secure development lifecycle" is large, and multi-query closes most of it.
 
-**Dedupe policy.** When two queries retrieve the same chunk, we keep the copy
-with the highest similarity and drop the rest. We lose the signal that
-"multiple queries agreed this is relevant"; in exchange the prompt stays
-short.
+**Dedupe policy.** Since citations are section-level (see
+`EvidenceSpan.section_id`), we dedupe at the **section** level: for each
+`section_id` we keep the best-scoring chunk across all query phrasings
+and drop the rest. This keeps at most one excerpt per section in the
+assessment prompt — cleaner than the old chunk-level dedupe, and it
+matches the citation granularity. The trade-off: a long section that
+has two genuinely distinct chunks loses the weaker one from the prompt;
+the agentic path can still see the whole section via `read_section`.
 
 ### 6.3 Agentic retrieval — `graph/nodes/agentic_retrieval.py`
 
@@ -461,7 +476,7 @@ function-calling schema.
 | Tool             | Purpose                                                                   |
 | ---------------- | ------------------------------------------------------------------------- |
 | `list_sections`  | Return the document's table of contents (section id, heading, pages).     |
-| `search_policy`  | Semantic search — returns top-k chunk ids with text previews.             |
+| `search_policy`  | Semantic search — returns top-k hits with section_id + text previews.     |
 | `read_section`   | Return one section's full text verbatim, given a `section_id`.            |
 | `finalize`       | Record the coverage judgment and terminate the loop.                      |
 
@@ -529,8 +544,11 @@ outputs auditable.
   forced to `low` — it didn't look hard enough to be confident. This rule
   doesn't exist on the deterministic path (which has a fixed query budget).
 - **Fabricated citations are dropped** by the shared `finalize_assessment`
-  (Section 7.5), not by the agent loop. The agent's `seen_hits` keyset is
-  passed in as `valid_chunk_ids`.
+  (Section 7.5), not by the agent loop. The agent's `seen_sections` set
+  — the union of section ids returned by `search_policy` and ids opened
+  via `read_section` — is passed in as `valid_section_ids`. This is why
+  a section the agent only reads (no search hit) is still a valid
+  citation.
 
 #### Trade-offs vs deterministic
 
@@ -560,10 +578,10 @@ sequenceDiagram
     N->>R: (control, embedder, store)
     R-->>N: hits: list[QueryHit]
     N->>P: (control, hits)
-    P-->>N: user prompt with chunk_ids inline
+    P-->>N: user prompt with section_ids inline
     N->>L: call_json(system, user, ControlAssessment)
     L-->>N: ControlAssessment (raw)
-    N->>F: finalize(control_id, coverage, evidence,<br/>valid_chunk_ids)
+    N->>F: finalize(control_id, coverage, evidence,<br/>valid_section_ids)
     F-->>N: ControlAssessment (validated)
 ```
 
@@ -592,14 +610,14 @@ sequenceDiagram
         end
     end
     A->>A: _build_assessment<br/>(coerce types, enforce min-searches)
-    A->>F: finalize(control_id, coverage,<br/>evidence_spans, valid_chunk_ids=seen_hits)
+    A->>F: finalize(control_id, coverage,<br/>evidence_spans, valid_section_ids=seen_sections)
     F-->>A: ControlAssessment (validated)
     A-->>N: ControlAssessment
 ```
 
 Same shape at the boundary as the deterministic flow: one `ControlAssessment`
-out, every citation validated against real retrieved chunks. The loop body
-differs; the contract with the rest of the graph does not.
+out, every citation validated against sections the agent actually saw. The
+loop body differs; the contract with the rest of the graph does not.
 
 ### 7.3 Prompts
 
@@ -607,10 +625,10 @@ Two system prompts, loaded at import time via `importlib.resources`:
 
 - `src/ai_auditor/prompts/assessment.md` — deterministic path. The user
   prompt, built by `_render_user_prompt`, contains control identity, each
-  retrieved chunk inline (tagged with `chunk_id`, section heading, page
+  retrieved chunk inline (tagged with `section_id`, section heading, page
   range, similarity), and a footer reminding the model to cite only those
-  `chunk_id`s. If retrieval returned no hits, the prompt short-circuits the
-  model toward `not_covered`.
+  `section_id`s. If retrieval returned no hits, the prompt short-circuits
+  the model toward `not_covered`.
 - `src/ai_auditor/prompts/retrieval_agent.md` — agentic path. The user
   prompt is just the control identity plus "investigate the policy using
   your tools, then call `finalize`". The model discovers evidence on its
@@ -637,17 +655,20 @@ Pydantic schemas:
 Both paths funnel through the same helper in
 `src/ai_auditor/graph/nodes/assessment.py`. Two protections apply:
 
-1. **Drop fabricated citations.** Any `EvidenceSpan.chunk_id` not in the
-   retrieved hit set is dropped. The model doesn't get to invent references
-   to chunks it never saw.
+1. **Drop fabricated citations.** Any `EvidenceSpan.section_id` not in
+   the set of sections actually touched during assessment is dropped. The
+   model doesn't get to invent references to sections it never saw.
 2. **Coerce unsupported verdicts.** If coverage is `covered` or `partial`
    but no citations survive, coverage is forced to `not_covered` and
    confidence to `low`. A `[post-validation]` note is appended to
    `reasoning` so the downgrade is auditable.
 
-The `valid_chunk_ids` set differs per path: deterministic uses the set of
-retrieved hits for that control; agentic uses `state.seen_hits` — the union
-of every chunk the agent retrieved via `search_policy`.
+The `valid_section_ids` set differs per path: deterministic uses the set
+of section ids across the retrieved hits for that control; agentic uses
+`state.seen_sections` — the union of section ids returned by
+`search_policy` **and** ids opened via `read_section`. The latter is the
+point of the section-level citation model: sections the agent reads
+become citable even when they didn't surface in a search.
 
 The agentic path layers two extra rules on top, in `_build_assessment`:
 
@@ -813,7 +834,8 @@ writing it to disk:
   tooling.
 - `report.md` — a human-readable Markdown rendering with a coverage overview,
   a per-theme table, and per-control findings with evidence citations
-  (quoted verbatim, linked by `chunk_id` and page number).
+  (linked by `section_id`, heading, and page range — looked up from
+  `Report.sections`).
 
 Both are written to the `--output` directory (default `out/`).
 
@@ -874,7 +896,7 @@ key — one retry fixes that. More retries rarely recover and burn tokens.
 
 ### Post-hoc citation filtering
 
-**Choice.** Drop fabricated `chunk_id`s after the call; coerce unsupported
+**Choice.** Drop fabricated `section_id`s after the call; coerce unsupported
 verdicts down.
 **Why.** LLMs hallucinate citations under pressure. Filtering post-hoc is
 cheaper and more defensible than prompting-until-perfect, and it's the same

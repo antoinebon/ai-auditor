@@ -120,8 +120,8 @@ flowchart LR
     tools `list_sections`, `search_policy`, `read_section`, `finalize`.
     Every tool call is written to `audit_trail.jsonl` for reviewability.
   Both modes share a post-validation layer that strips fabricated
-  chunk_ids and coerces "covered/partial with no surviving citation" down
-  to `not_covered` to keep verdicts defensible.
+  section_ids and coerces "covered/partial with no surviving citation"
+  down to `not_covered` to keep verdicts defensible.
 - **synthesize_report** — deterministic aggregation of stats by theme +
   one short LLM call for the executive summary (skippable with
   `--skip-summary`).
@@ -235,7 +235,7 @@ Metrics captured:
 - **Cross-strategy agreement**: per-control coverage match rate + Cohen's
   kappa (accounts for chance agreement).
 - **Evidence Jaccard**: where the two strategies agree on coverage, how
-  much do the cited chunk_ids overlap.
+  much do the cited section_ids overlap.
 - **Performance**: wall-time, LLM call count, tool-call count per
   `(doc, strategy)` pair.
 
