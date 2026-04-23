@@ -13,7 +13,11 @@
     parties. These policies must be reviewed at planned intervals and when
     significant changes occur, to ensure continued suitability and
     effectiveness.
-  queries: []
+  queries:
+  - information security policy definition
+  - organization-wide access control policies
+  - review and update frequency for security policies
+  - communication of security policies to external parties
 
 - id: A.5.15
   title: Access control
@@ -23,7 +27,11 @@
     associated assets should be established and implemented based on
     business and information security requirements. Access must be granted
     according to defined criteria and reviewed periodically.
-  queries: []
+  queries:
+  - access control policies
+  - role-based access management
+  - information asset protection
+  - periodic review of user permissions
 
 - id: A.5.24
   title: Information security incident management planning and preparation
@@ -33,7 +41,11 @@
     security incidents by defining processes, roles, and responsibilities
     in advance. Communication channels, escalation paths, and decision
     authorities must be established before an incident occurs.
-  queries: []
+  queries:
+  - incident response planning
+  - information security incident management framework
+  - organizational incident preparedness
+  - communication protocols for security breaches
 
 - id: A.6.3
   title: Information security awareness, education and training
@@ -44,7 +56,11 @@
     with regular updates on organizational policies and procedures. The
     programme should reflect evolving threats and be tailored to role
     responsibilities.
-  queries: []
+  queries:
+  - information security awareness training for personnel
+  - role-based security education programs
+  - organizational policy updates for employees
+  - threat-aware employee training initiatives
 
 - id: A.7.1
   title: Physical security perimeters
@@ -54,7 +70,11 @@
     contain information and other associated assets. Perimeter strength
     should be commensurate with the sensitivity of the assets housed
     within.
-  queries: []
+  queries:
+  - perimeter strength
+  - asset classification
+  - security perimeter requirements
+  - sensitive data protection
 
 - id: A.8.13
   title: Information backup
@@ -65,4 +85,8 @@
     Backups should be protected against unauthorized access and
     environmental threats and stored with appropriate geographic
     separation.
-  queries: []
+  queries:
+  - regular backups of data
+  - protection of backed up information
+  - geographic separation of backups
+  - authorized access to backup systems
