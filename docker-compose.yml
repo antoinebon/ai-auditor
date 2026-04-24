@@ -46,12 +46,12 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - mlflow_data:/mlflow
+      - ./mlflow.db:/mlflow/mlflow.db
     command: >
       mlflow server
         --host 0.0.0.0
         --port 5000
-        --backend-store-uri sqlite:////mlflow/mlruns.db
+        --backend-store-uri sqlite:////mlflow/mlflow.db
         --default-artifact-root /mlflow/artifacts
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
@@ -74,6 +74,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./out:/app/out
+      - ./mlruns:/app/mlruns
     # No default command — invoke with e.g.:
     #   docker compose run --rm ai-auditor analyze /app/data/examples/minimal_policy.pdf --agentic
 

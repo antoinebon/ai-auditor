@@ -1,7 +1,7 @@
 .PHONY: sync fmt lint typecheck test check \
         docker-build compose-up compose-down compose-pull-model \
         mlflow-ui \
-        run-min run-real run-agentic \
+        run-tiny run-min run-real run-agentic \
         docker-run-min docker-run-real docker-run-agentic \
         eval eval-full \
         generate-queries
@@ -45,10 +45,14 @@ compose-pull-model:
 	docker compose up --no-deps ollama-pull
 
 mlflow-ui:
-	@echo "Launching local MLflow UI against ./mlruns (Ctrl-C to stop)"
-	uv run mlflow ui --host 0.0.0.0 --port 5000
+	@echo "Launching local MLflow UI (Ctrl-C to stop)"
+	uv run mlflow ui --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5000
 
 # --- One-off analyze runs -------------------------------------------
+
+run-tiny:
+	CONTROLS_PATH=data/controls/iso27001_annex_a_small.yaml \
+	uv run ai-auditor analyze data/examples/minimal_policy.pdf --skip-summary
 
 run-min:
 	uv run ai-auditor analyze data/examples/minimal_policy.pdf
